@@ -11,4 +11,5 @@ stages:
         location: 'West Europe'
         templateLocation: 'URL of the file'
         csmFileLink: 'https://raw.githubusercontent.com/Azure/Enterprise-Scale/main/eslzArm/managementGroupTemplates/policyDefinitions/policies.json'
+        overrideParameters: '-topLevelManagementGroupPrefix "jonas"'
         deploymentMode: 'Incremental'
