@@ -5,11 +5,10 @@ stages:
     steps:
     - task: AzureResourceManagerTemplateDeployment@3
       inputs:
-        deploymentScope: 'Subscription'
+        deploymentScope: 'Management Group'
         azureResourceManagerConnection: 'Jonas - Dev/Test(0cd0b54d-1293-4ea8-a959-2f6d3e55a688)'
-        subscriptionId: '0cd0b54d-1293-4ea8-a959-2f6d3e55a688'
         location: 'West Europe'
         templateLocation: 'URL of the file'
         csmFileLink: 'https://raw.githubusercontent.com/Azure/Enterprise-Scale/main/eslzArm/managementGroupTemplates/policyDefinitions/policies.json'
-        overrideParameters: '-topLevelManagementGroupPrefix "jonas"'
+        overrideParameters: '--topLevelManagementGroupPrefix "jonas-mgmt"'
         deploymentMode: 'Incremental'
