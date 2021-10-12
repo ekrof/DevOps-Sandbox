@@ -1,0 +1,38 @@
+name: Generate CODEOWNERS
+on:
+  pull_request:
+    branches:
+      - "main"
+    paths-ignore:
+      - "**.md"
+jobs:
+  generate-codeowners:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Install tools
+        run: sudo ./install-tools.sh
+      - name: Run CODEOWNERS Script
+        id: codeowner-script
+        env:
+          ORGANIZATION: TietoEVRY-Aibel
+          TE_TEAM: tietoevry-sre
+          CUST_TEAM: aibel-sre
+          DEFAULT_RULES: "* @${ORGANIZATION}/${CUST_TEAM} @${ORGANIZATION}/${TE_TEAM}, /.github/* @${ORGANIZATION}/${TE_TEAM},CODEOWNERS @${ORGANIZATION}/${TE_TEAM},*.json @${ORGANIZATION}/${TE_TEAM}"
+          CODEOWNERS_GENERATED: CODEOWNERS_GENERATED
+        run: |
+          ./generate-codeowners.sh
+          if cmp -s "CODEOWNERS_GENERATED" "CODEOWNERS"; then
+                    echo "No changes to CODEOWNERS"
+          else
+                    echo "Changes detected, update branch"
+                    echo "UPDATE_CODEOWNERS=true" >> "$GITHUB_ENV"
+                    mv $CODEOWNERS_GENERATED CODEOWNERS
+          fi
+      - name: Update CODEOWNERS file if changes
+        if: ${{ env.UPDATE_CODEOWNERS == 'true' }}
+        uses: stefanzweifel/git-auto-commit-action@v4
+        with:
+          commit_message: "Github Action: UPDATE CODEOWNERS"
+          push_options: --force
