@@ -1,0 +1,121 @@
+name: Assign Azure RBAC Roles
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_name:
+        description: "Display name, App ID (clientId), or Object ID of the target principal"
+        required: true
+        type: string
+      roles:
+        description: "Comma-separated Azure RBAC role names, e.g. 'Foundry User,Cognitive Services OpenAI User,Search Index Data Contributor,Search Service Contributor'"
+        required: true
+        type: string
+      scope:
+        description: "Resource ID to assign roles at, e.g. /subscriptions/<sub>/resourceGroups/<rg> or a specific resource ID"
+        required: true
+        type: string
+      principal_type:
+        description: "AAD principal type for --assignee-principal-type"
+        required: false
+        type: choice
+        default: ServicePrincipal
+        options:
+          - ServicePrincipal
+          - Group
+          - User
+      dry_run:
+        description: "Preview role changes without creating any assignments"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: azure-rbac-${{ inputs.scope }}
+  cancel-in-progress: false
+
+jobs:
+  assign-roles:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Resolve principal object ID
+        id: resolve
+        run: |
+          set -euo pipefail
+          APP_NAME="${{ inputs.app_name }}"
+          GUID_RE='^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$'
+
+          if [[ "$APP_NAME" =~ $GUID_RE ]]; then
+            if OBJECT_ID=$(az ad sp show --id "$APP_NAME" --query id -o tsv 2>/dev/null) && [[ -n "$OBJECT_ID" ]]; then
+              :
+            else
+              OBJECT_ID=$(az ad sp list --filter "appId eq '$APP_NAME'" --query "[0].id" -o tsv)
+            fi
+          else
+            OBJECT_ID=$(az ad sp list --display-name "$APP_NAME" --query "[0].id" -o tsv)
+          fi
+
+          if [[ -z "$OBJECT_ID" || "$OBJECT_ID" == "null" ]]; then
+            echo "::error::Could not resolve a service principal for '$APP_NAME'."
+            exit 1
+          fi
+
+          echo "Resolved '$APP_NAME' -> $OBJECT_ID"
+          echo "object_id=$OBJECT_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Reconcile role assignments
+        env:
+          OBJECT_ID: ${{ steps.resolve.outputs.object_id }}
+          SCOPE: ${{ inputs.scope }}
+          PRINCIPAL_TYPE: ${{ inputs.principal_type }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          ROLES_CSV: ${{ inputs.roles }}
+        run: |
+          set -euo pipefail
+          echo "| Role | Status |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|------|--------|" >> "$GITHUB_STEP_SUMMARY"
+
+          IFS=',' read -ra ROLE_LIST <<< "$ROLES_CSV"
+          for RAW_ROLE in "${ROLE_LIST[@]}"; do
+            ROLE="$(echo "$RAW_ROLE" | xargs)"
+            [[ -z "$ROLE" ]] && continue
+
+            if ! az role definition list --name "$ROLE" --query "[0].name" -o tsv | grep -q .; then
+              echo "::error::Unknown role definition '$ROLE'."
+              echo "| $ROLE | ❌ unknown role |" >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+            fi
+
+            EXISTING=$(az role assignment list --assignee-object-id "$OBJECT_ID" --scope "$SCOPE" --role "$ROLE" --query "[0].id" -o tsv)
+
+            if [[ -n "$EXISTING" ]]; then
+              echo "'$ROLE' already assigned, skipping"
+              echo "| $ROLE | already assigned |" >> "$GITHUB_STEP_SUMMARY"
+              continue
+            fi
+
+            if [[ "$DRY_RUN" == "true" ]]; then
+              echo "[dry-run] would assign '$ROLE'"
+              echo "| $ROLE | would assign (dry-run) |" >> "$GITHUB_STEP_SUMMARY"
+              continue
+            fi
+
+            az role assignment create \
+              --assignee-object-id "$OBJECT_ID" \
+              --assignee-principal-type "$PRINCIPAL_TYPE" \
+              --role "$ROLE" \
+              --scope "$SCOPE"
+            echo "assigned '$ROLE'"
+            echo "| $ROLE | assigned |" >> "$GITHUB_STEP_SUMMARY"
+          done
