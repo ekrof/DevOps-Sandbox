@@ -4,26 +4,25 @@ on:
   workflow_dispatch:
     inputs:
       app_name:
-        description: "Display name, App ID (clientId), or Object ID of the target principal"
+        description: "Display name, App ID (clientId), or Object ID of the target service principal"
         required: true
         type: string
-      roles:
-        description: "Comma-separated Azure RBAC role names, e.g. 'Foundry User,Cognitive Services OpenAI User,Search Index Data Contributor,Search Service Contributor'"
-        required: true
-        type: string
-      scope:
-        description: "Resource ID to assign roles at, e.g. /subscriptions/<sub>/resourceGroups/<rg> or a specific resource ID"
-        required: true
-        type: string
-      principal_type:
-        description: "AAD principal type for --assignee-principal-type"
-        required: false
-        type: choice
-        default: ServicePrincipal
-        options:
-          - ServicePrincipal
-          - Group
-          - User
+      role_foundry_user:
+        description: "Foundry User"
+        type: boolean
+        default: false
+      role_cognitive_services_openai_user:
+        description: "Cognitive Services OpenAI User"
+        type: boolean
+        default: false
+      role_search_index_data_contributor:
+        description: "Search Index Data Contributor"
+        type: boolean
+        default: false
+      role_search_service_contributor:
+        description: "Search Service Contributor"
+        type: boolean
+        default: false
       dry_run:
         description: "Preview role changes without creating any assignments"
         required: false
@@ -35,7 +34,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: azure-rbac-${{ inputs.scope }}
+  group: azure-rbac-${{ inputs.app_name }}
   cancel-in-progress: false
 
 jobs:
@@ -77,20 +76,35 @@ jobs:
       - name: Reconcile role assignments
         env:
           OBJECT_ID: ${{ steps.resolve.outputs.object_id }}
-          SCOPE: ${{ inputs.scope }}
-          PRINCIPAL_TYPE: ${{ inputs.principal_type }}
+          SCOPE: ${{ vars.AZURE_ROLE_SCOPE }}
           DRY_RUN: ${{ inputs.dry_run }}
-          ROLES_CSV: ${{ inputs.roles }}
+          ROLE_FOUNDRY_USER: ${{ inputs.role_foundry_user }}
+          ROLE_COGNITIVE_SERVICES_OPENAI_USER: ${{ inputs.role_cognitive_services_openai_user }}
+          ROLE_SEARCH_INDEX_DATA_CONTRIBUTOR: ${{ inputs.role_search_index_data_contributor }}
+          ROLE_SEARCH_SERVICE_CONTRIBUTOR: ${{ inputs.role_search_service_contributor }}
         run: |
           set -euo pipefail
+
+          if [[ -z "$SCOPE" ]]; then
+            echo "::error::Repository variable AZURE_ROLE_SCOPE is not set."
+            exit 1
+          fi
+
+          ROLES=()
+          [[ "$ROLE_FOUNDRY_USER" == "true" ]] && ROLES+=("Foundry User")
+          [[ "$ROLE_COGNITIVE_SERVICES_OPENAI_USER" == "true" ]] && ROLES+=("Cognitive Services OpenAI User")
+          [[ "$ROLE_SEARCH_INDEX_DATA_CONTRIBUTOR" == "true" ]] && ROLES+=("Search Index Data Contributor")
+          [[ "$ROLE_SEARCH_SERVICE_CONTRIBUTOR" == "true" ]] && ROLES+=("Search Service Contributor")
+
+          if [[ ${#ROLES[@]} -eq 0 ]]; then
+            echo "::error::No roles selected."
+            exit 1
+          fi
+
           echo "| Role | Status |" >> "$GITHUB_STEP_SUMMARY"
           echo "|------|--------|" >> "$GITHUB_STEP_SUMMARY"
 
-          IFS=',' read -ra ROLE_LIST <<< "$ROLES_CSV"
-          for RAW_ROLE in "${ROLE_LIST[@]}"; do
-            ROLE="$(echo "$RAW_ROLE" | xargs)"
-            [[ -z "$ROLE" ]] && continue
-
+          for ROLE in "${ROLES[@]}"; do
             if ! az role definition list --name "$ROLE" --query "[0].name" -o tsv | grep -q .; then
               echo "::error::Unknown role definition '$ROLE'."
               echo "| $ROLE | ❌ unknown role |" >> "$GITHUB_STEP_SUMMARY"
@@ -113,7 +127,7 @@ jobs:
 
             az role assignment create \
               --assignee-object-id "$OBJECT_ID" \
-              --assignee-principal-type "$PRINCIPAL_TYPE" \
+              --assignee-principal-type ServicePrincipal \
               --role "$ROLE" \
               --scope "$SCOPE"
             echo "assigned '$ROLE'"
