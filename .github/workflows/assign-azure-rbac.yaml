@@ -42,6 +42,9 @@ jobs:
   assign-roles:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Azure login (OIDC)
         uses: azure/login@v2
         with:
@@ -173,7 +176,8 @@ jobs:
           ISSUE_NUM="$(gh issue list --label rbac-state --state open --json number --jq '.[0].number' || true)"
 
           if [[ -z "$ISSUE_NUM" ]]; then
-            ISSUE_NUM="$(gh issue create --title "Current Azure RBAC Delegated Role Assignments" --label rbac-state --body-file assignments-body.md --json number --jq '.number')"
+            ISSUE_URL="$(gh issue create --title "Current Azure RBAC Delegated Role Assignments" --label rbac-state --body-file assignments-body.md)"
+            ISSUE_NUM="${ISSUE_URL##*/}"
             gh issue pin "$ISSUE_NUM" || echo "::warning::Could not pin issue #$ISSUE_NUM — pin it manually."
             echo "Created and pinned issue #$ISSUE_NUM"
           else
