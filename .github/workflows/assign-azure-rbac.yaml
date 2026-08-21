@@ -199,7 +199,7 @@ jobs:
               | map({principalId: .[0].principalId, roles: ([.[].roleDefinitionName] | sort)})
               | sort_by(.principalId)
               | .[]
-              | [.principalId, (.roles | join("¦"))]
+              | [.principalId, (.roles | join(","))]
               | @tsv
             ')"
 
@@ -211,8 +211,8 @@ jobs:
             while IFS=$'\t' read -r PRINCIPAL_ID ROLES_JOINED; do
               [[ -z "$PRINCIPAL_ID" ]] && continue
               DISPLAY_NAME="$(az ad sp show --id "$PRINCIPAL_ID" --query displayName -o tsv 2>/dev/null || echo "(unresolved)")"
-              ROLE_BADGES="$(echo "$ROLES_JOINED" | tr '¦' '\n' | sed 's/^/`/;s/$/`/' | paste -sd' ' -)"
-              ROLE_COUNT="$(echo "$ROLES_JOINED" | tr '¦' '\n' | grep -c .)"
+              ROLE_BADGES="$(echo "$ROLES_JOINED" | tr ',' '\n' | sed 's/^/`/;s/$/`/' | paste -sd' ' -)"
+              ROLE_COUNT="$(echo "$ROLES_JOINED" | tr ',' '\n' | grep -c .)"
               SUFFIX=""
               [[ "$ROLE_COUNT" -gt 1 ]] && SUFFIX=" _(${ROLE_COUNT} roles)_"
               ENV_TABLE+="| **${DISPLAY_NAME}**${SUFFIX} | \`${PRINCIPAL_ID}\` | ${ROLE_BADGES} |"$'\n'
