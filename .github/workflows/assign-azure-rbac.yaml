@@ -3,6 +3,14 @@ name: Assign Azure RBAC Roles
 on:
   workflow_dispatch:
     inputs:
+      environment:
+        description: "Target environment"
+        type: choice
+        required: true
+        options:
+          - dev
+          - test
+          - prod
       app_name:
         description: "Display name, App ID (clientId), or Object ID of the target service principal"
         required: true
@@ -35,7 +43,7 @@ permissions:
   issues: write
 
 concurrency:
-  group: azure-rbac-${{ inputs.app_name }}
+  group: azure-rbac-${{ inputs.environment }}-${{ inputs.app_name }}
   cancel-in-progress: false
 
 jobs:
@@ -44,6 +52,27 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Resolve environment settings
+        id: env
+        run: |
+          set -euo pipefail
+          ENVIRONMENT="${{ inputs.environment }}"
+          case "$ENVIRONMENT" in
+            dev)  SCOPE="${{ vars.AZURE_ROLE_SCOPE_DEV }}" ;;
+            test) SCOPE="${{ vars.AZURE_ROLE_SCOPE_TEST }}" ;;
+            prod) SCOPE="${{ vars.AZURE_ROLE_SCOPE_PROD }}" ;;
+            *) echo "::error::Unknown environment '$ENVIRONMENT'"; exit 1 ;;
+          esac
+
+          if [[ -z "$SCOPE" ]]; then
+            echo "::error::Repository variable AZURE_ROLE_SCOPE_${ENVIRONMENT^^} is not set."
+            exit 1
+          fi
+
+          echo "scope=${SCOPE}" >> "$GITHUB_OUTPUT"
+          echo "📋 Environment: ${{ inputs.environment }}"
+          echo "📋 Scope:       ${SCOPE}"
 
       - name: Azure login (OIDC)
         uses: azure/login@v2
@@ -80,7 +109,7 @@ jobs:
       - name: Reconcile role assignments
         env:
           OBJECT_ID: ${{ steps.resolve.outputs.object_id }}
-          SCOPE: ${{ vars.AZURE_ROLE_SCOPE }}
+          SCOPE: ${{ steps.env.outputs.scope }}
           DRY_RUN: ${{ inputs.dry_run }}
           ROLE_FOUNDRY_USER: ${{ inputs.role_foundry_user }}
           ROLE_COGNITIVE_SERVICES_OPENAI_USER: ${{ inputs.role_cognitive_services_openai_user }}
@@ -88,11 +117,6 @@ jobs:
           ROLE_SEARCH_SERVICE_CONTRIBUTOR: ${{ inputs.role_search_service_contributor }}
         run: |
           set -euo pipefail
-
-          if [[ -z "$SCOPE" ]]; then
-            echo "::error::Repository variable AZURE_ROLE_SCOPE is not set."
-            exit 1
-          fi
 
           ROLES=()
           [[ "$ROLE_FOUNDRY_USER" == "true" ]] && ROLES+=("Foundry User")
@@ -141,7 +165,9 @@ jobs:
       - name: Sync current assignments to pinned issue
         env:
           GH_TOKEN: ${{ github.token }}
-          SCOPE: ${{ vars.AZURE_ROLE_SCOPE }}
+          SCOPE_DEV: ${{ vars.AZURE_ROLE_SCOPE_DEV }}
+          SCOPE_TEST: ${{ vars.AZURE_ROLE_SCOPE_TEST }}
+          SCOPE_PROD: ${{ vars.AZURE_ROLE_SCOPE_PROD }}
         run: |
           set -euo pipefail
 
@@ -153,30 +179,71 @@ jobs:
             FILTER+="roleDefinitionName=='${ROLE}'"
           done
 
-          ASSIGNMENTS_JSON="$(az role assignment list --scope "$SCOPE" --query "[?${FILTER}]" -o json)"
+          declare -A ENV_EMOJI=([dev]="🛠️" [test]="🧪" [prod]="🚀")
+          declare -A ENV_SCOPE=([dev]="$SCOPE_DEV" [test]="$SCOPE_TEST" [prod]="$SCOPE_PROD")
+
+          TOTAL_PRINCIPALS=0
+          TOTAL_ASSIGNMENTS=0
+          SECTIONS=""
+
+          for ENVIRONMENT in dev test prod; do
+            SCOPE="${ENV_SCOPE[$ENVIRONMENT]}"
+            [[ -z "$SCOPE" ]] && continue
+
+            ASSIGNMENTS_JSON="$(az role assignment list --scope "$SCOPE" --query "[?${FILTER}]" -o json)"
+            COUNT="$(echo "$ASSIGNMENTS_JSON" | jq 'length')"
+            [[ "$COUNT" -eq 0 ]] && continue
+
+            GROUPED="$(echo "$ASSIGNMENTS_JSON" | jq -r '
+              group_by(.principalId)
+              | map({principalId: .[0].principalId, roles: ([.[].roleDefinitionName] | sort)})
+              | sort_by(.principalId)
+              | .[]
+              | [.principalId, (.roles | join("¦"))]
+              | @tsv
+            ')"
+
+            PRINCIPAL_COUNT="$(echo "$GROUPED" | grep -c . || true)"
+            TOTAL_PRINCIPALS=$((TOTAL_PRINCIPALS + PRINCIPAL_COUNT))
+            TOTAL_ASSIGNMENTS=$((TOTAL_ASSIGNMENTS + COUNT))
+
+            ENV_TABLE="| Principal | Object ID | Roles |"$'\n'"|-----------|-----------|-------|"$'\n'
+            while IFS=$'\t' read -r PRINCIPAL_ID ROLES_JOINED; do
+              [[ -z "$PRINCIPAL_ID" ]] && continue
+              DISPLAY_NAME="$(az ad sp show --id "$PRINCIPAL_ID" --query displayName -o tsv 2>/dev/null || echo "(unresolved)")"
+              ROLE_BADGES="$(echo "$ROLES_JOINED" | tr '¦' '\n' | sed 's/^/`/;s/$/`/' | paste -sd' ' -)"
+              ROLE_COUNT="$(echo "$ROLES_JOINED" | tr '¦' '\n' | grep -c .)"
+              SUFFIX=""
+              [[ "$ROLE_COUNT" -gt 1 ]] && SUFFIX=" _(${ROLE_COUNT} roles)_"
+              ENV_TABLE+="| **${DISPLAY_NAME}**${SUFFIX} | \`${PRINCIPAL_ID}\` | ${ROLE_BADGES} |"$'\n'
+            done <<< "$GROUPED"
+
+            SECTIONS+="<details open>"$'\n'
+            SECTIONS+="<summary>${ENV_EMOJI[$ENVIRONMENT]} <strong>${ENVIRONMENT}</strong> — ${PRINCIPAL_COUNT} principal(s), ${COUNT} assignment(s)</summary>"$'\n\n'
+            SECTIONS+="$ENV_TABLE"$'\n'
+            SECTIONS+="</details>"$'\n\n'
+          done
 
           {
-            echo "# Current Azure RBAC Delegated Role Assignments"
+            echo "# 🔐 Current Azure RBAC Delegated Role Assignments"
             echo
-            echo "Auto-generated by [assign-azure-rbac.yaml](${{ github.server_url }}/${{ github.repository }}/actions/workflows/assign-azure-rbac.yaml). Do not edit by hand — changes are overwritten on the next run."
+            echo "> Auto-generated by [assign-azure-rbac.yaml](${{ github.server_url }}/${{ github.repository }}/actions/workflows/assign-azure-rbac.yaml) — do not edit by hand, changes are overwritten on the next run."
             echo
-            echo "Last synced: $(date -u '+%Y-%m-%d %H:%M:%S UTC') · [Triggering run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+            echo "**🌍 Environments:** $(echo "${!ENV_SCOPE[@]}" | tr ' ' '\n' | wc -l | tr -d ' ') · **🧑‍💻 Principals:** ${TOTAL_PRINCIPALS} · **🔑 Assignments:** ${TOTAL_ASSIGNMENTS}"
             echo
-            echo "| Principal | Object ID | Role |"
-            echo "|-----------|-----------|------|"
+            echo "🕒 Last synced: $(date -u '+%Y-%m-%d %H:%M:%S UTC') · [Triggering run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+            echo
+            echo "---"
+            echo
+            echo -n "$SECTIONS"
           } > assignments-body.md
-
-          echo "$ASSIGNMENTS_JSON" | jq -r '.[] | [.principalId, .roleDefinitionName] | @tsv' | while IFS=$'\t' read -r PRINCIPAL_ID ROLE; do
-            DISPLAY_NAME="$(az ad sp show --id "$PRINCIPAL_ID" --query displayName -o tsv 2>/dev/null || echo "(unresolved)")"
-            echo "| ${DISPLAY_NAME} | \`${PRINCIPAL_ID}\` | ${ROLE} |" >> assignments-body.md
-          done
 
           gh label create rbac-state --description "Tracks the auto-synced Azure RBAC assignments issue" --color "0E8A16" 2>/dev/null || true
 
           ISSUE_NUM="$(gh issue list --label rbac-state --state open --json number --jq '.[0].number' || true)"
 
           if [[ -z "$ISSUE_NUM" ]]; then
-            ISSUE_URL="$(gh issue create --title "Current Azure RBAC Delegated Role Assignments" --label rbac-state --body-file assignments-body.md)"
+            ISSUE_URL="$(gh issue create --title "🔐 Current Azure RBAC Delegated Role Assignments" --label rbac-state --body-file assignments-body.md)"
             ISSUE_NUM="${ISSUE_URL##*/}"
             gh issue pin "$ISSUE_NUM" || echo "::warning::Could not pin issue #$ISSUE_NUM — pin it manually."
             echo "Created and pinned issue #$ISSUE_NUM"
