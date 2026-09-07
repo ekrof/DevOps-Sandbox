@@ -39,22 +39,29 @@ tools:
 
 safe-outputs:
   report-failure-as-issue: true
+  # Bootstrap path: only used the very first time this workflow runs, when
+  # no `daily-report`-labelled issue exists yet.
   create-issue:
     title-prefix: "🌅 [Daily MLOps Activity] "
     labels: [mlops, daily-report, automated]
     max: 1
-    # Replace-previous-result strategy: latest report supersedes older ones.
-    close-older-issues: true
-    deduplicate-by-title: true
+  # Steady-state path: every subsequent run rewrites the same issue in
+  # place instead of creating a new one. `target: "*"` requires the agent
+  # to supply issue_number (discovered via gh issue list in the prompt).
+  update-issue:
+    status:
+    title:
+    body:
+    target: "*"
+    max: 1
   # Custom safe-output job. `needs: safe_outputs` (persists across
-  # recompiles, per gh-aw docs) guarantees this runs AFTER the create-issue
-  # handler above, so the issue already exists when this job looks for it.
-  # This is an agent-invoked MCP tool — the agent must call `pin_daily_report`
-  # explicitly (see the prompt body's final instruction) for this job to run
-  # at all; it is not automatic just because create_issue ran.
+  # recompiles, per gh-aw docs) guarantees this runs AFTER the
+  # create-issue/update-issue handlers above. This is an agent-invoked MCP
+  # tool — the agent must call `pin_daily_report` explicitly (see the
+  # prompt body's final instruction) for this job to run at all.
   jobs:
     pin_daily_report:
-      description: "Pin today's activity report issue and unpin any previous pinned report. Call this exactly once, immediately after create_issue succeeds."
+      description: "Pin the single persistent activity report issue. Call this exactly once, after create_issue or update_issue succeeds."
       needs: safe_outputs
       runs-on: ubuntu-latest
       permissions:
@@ -66,7 +73,7 @@ safe-outputs:
           required: false
           type: string
       steps:
-      - name: Unpin previous daily report and pin the new one
+      - name: Pin the daily report issue if not already pinned
         env:
           GITHUB_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -76,58 +83,32 @@ safe-outputs:
           owner="${REPO%/*}"
           name="${REPO#*/}"
 
-          # 1. Find the newest open issue carrying the `daily-report` label —
-          #    that's the one the create-issue safe output just filed.
-          new_number="$(gh issue list --repo "$REPO" \
+          # There is only ever one daily-report issue (create-issue bootstraps
+          # it once; every later run rewrites it via update-issue), so we just
+          # need to find it and make sure it's pinned. No unpinning of
+          # "older" reports is needed since there is nothing else to unpin.
+          issue_number="$(gh issue list --repo "$REPO" \
             --label daily-report --state open \
             --limit 1 --json number --jq '.[0].number')"
 
-          if [ -z "$new_number" ] || [ "$new_number" = "null" ]; then
+          if [ -z "$issue_number" ] || [ "$issue_number" = "null" ]; then
             echo "No open daily-report issue found — nothing to pin."
             exit 0
           fi
 
-          new_id="$(gh api graphql -f query='
+          issue_id="$(gh api graphql -f query='
             query($owner:String!, $name:String!, $number:Int!) {
               repository(owner:$owner, name:$name) {
                 issue(number:$number) { id }
               }
-            }' -F owner="$owner" -F name="$name" -F number="$new_number" \
+            }' -F owner="$owner" -F name="$name" -F number="$issue_number" \
             | jq -r '.data.repository.issue.id')"
 
-          # 2. Unpin any currently-pinned issues carrying the `daily-report`
-          #    label so we never keep more than one pinned report.
-          pinned_json="$(gh api graphql -f query='
-            query($owner:String!, $name:String!) {
-              repository(owner:$owner, name:$name) {
-                pinnedIssues(first: 3) {
-                  nodes { issue { id number labels(first:20){nodes{name}} } }
-                }
-              }
-            }' -F owner="$owner" -F name="$name")"
-
-          echo "$pinned_json" \
-            | jq -r --arg keep "$new_id" '
-                .data.repository.pinnedIssues.nodes[]
-                | select(.issue.labels.nodes | map(.name) | index("daily-report"))
-                | select(.issue.id != $keep)
-                | .issue.id' \
-            | while read -r old_id; do
-                [ -n "$old_id" ] || continue
-                echo "Unpinning issue node $old_id"
-                gh api graphql -f query='
-                  mutation($id:ID!) {
-                    unpinIssue(input:{issueId:$id}) { clientMutationId }
-                  }' -F id="$old_id" >/dev/null
-              done
-
-          # 3. Pin the new issue (idempotent — GitHub errors if already pinned,
-          #    which we swallow).
-          echo "Pinning new issue #$new_number (node $new_id)"
+          echo "Pinning issue #$issue_number (node $issue_id)"
           gh api graphql -f query='
             mutation($id:ID!) {
               pinIssue(input:{issueId:$id}) { clientMutationId }
-            }' -F id="$new_id" >/dev/null || \
+            }' -F id="$issue_id" >/dev/null || \
             echo "Pin no-op (likely already pinned)."
 ---
 
@@ -136,6 +117,10 @@ safe-outputs:
 You are the reporter for the AkerBP DIG MLOps team. Produce one concise,
 friendly daily activity report for the repository this workflow runs in:
 **`${{ github.repository }}`**.
+
+This report lives in a **single persistent issue** that gets rewritten
+every weekday — not a new issue per day. Before writing anything, find out
+whether that issue already exists.
 
 ## Time window ⏰
 
@@ -150,6 +135,9 @@ friendly daily activity report for the repository this workflow runs in:
 
 Using `gh` commands against the current repository only:
 
+0. **Find the existing report issue** — search for an open issue labelled
+   `daily-report` (e.g. `gh issue list --label daily-report --state open`).
+   Remember its number if found; if none exists, this is the first-ever run.
 1. **New issues opened in the window** — number, title, author, labels.
 2. **In-progress tasks** — open issues updated inside the window: number, title,
    assignees, last-updated-at, current labels.
@@ -159,21 +147,34 @@ Using `gh` commands against the current repository only:
    with age.
 
 Do not attempt to clone code. Do not attempt to read other repositories. Call
-`noop` only if every list above is empty, with a short explanation.
+`noop` only if every list above is empty, with a short explanation — even on
+a quiet day, still update the existing report issue if one exists (see below);
+only skip entirely if there is truly nothing to say AND no report issue
+exists yet.
 
-## Output — two required tool calls, in order ✍️
+## Output — required tool calls, in order ✍️
 
-**Step 1 — `create_issue`** (exactly once):
+**Step 1 — create or update the report issue** (exactly one of the two):
 
-- **Title**: `Daily MLOps Activity — <YYYY-MM-DD>` (UTC date of the run).
-  The `title-prefix` in frontmatter automatically prepends `🌅 [Daily MLOps
-  Activity] `, so keep the title itself emoji-free.
-- **Body**: Markdown, in this exact structure. Emit `_none_ 🎉` for empty
-  sections (a quiet day is a good day).
+- **If step 0 found no existing `daily-report` issue** (first-ever run),
+  call `create_issue` once:
+  - **Title**: `Daily MLOps Activity Report` (static — never include a date;
+    the `title-prefix` in frontmatter prepends `🌅 [Daily MLOps Activity] `
+    automatically).
+  - **Body**: the template below.
+- **If step 0 found an existing `daily-report` issue**, call `update_issue`
+  once instead, targeting that `issue_number`, with `operation: "replace"`
+  and:
+  - **status**: `"open"` (always keep it open).
+  - **title**: the same static title as above (do not change it).
+  - **body**: the template below, fully replacing the previous content.
+
+Body template (identical for both create and update):
 
 ```
 ## ☀️ Good morning, MLOps crew!
 
+_Last updated: <current UTC timestamp>_
 _Report window: <start UTC> → <end UTC>_
 
 ## 🧭 TL;DR
@@ -209,13 +210,12 @@ _🤖 Auto-generated by the `daily-mlops-activity-report` agentic workflow._
 _Have a productive day! ☕_
 ```
 
-**Step 2 — `pin_daily_report`** (exactly once, immediately after `create_issue`
+**Step 2 — `pin_daily_report`** (exactly once, immediately after step 1
 succeeds):
 
-Call the `pin_daily_report` tool with any short `note` (e.g. `"pin today's
-report"`). This is **mandatory**, not optional — it is what pins the new
-issue and unpins yesterday's. Skipping this call means the report is
-created but never pinned.
+Call the `pin_daily_report` tool with any short `note` (e.g. `"pin the
+report"`). This is **mandatory**, not optional — it ensures the report
+issue stays pinned. Safe to call every run; it is a no-op if already pinned.
 
 ## Rules 📏
 
@@ -223,9 +223,10 @@ created but never pinned.
 - Every issue and PR reference must be a full URL (`https://github.com/...`).
 - Use the emojis exactly as shown in the template so the layout stays
   consistent across days.
-- Emit **exactly one** `create_issue` call followed by **exactly one**
-  `pin_daily_report` call. No comments, no labels, no PRs, no other side
-  effects.
-- If you call `noop` instead of `create_issue` (empty report), do **not**
-  call `pin_daily_report` — there is nothing new to pin.
+- Never put a date in the issue **title** — only in the `_Last updated:_`
+  line inside the body. The title must stay identical across every run so
+  step 0's search keeps finding the same issue.
+- Emit **exactly one** `create_issue` **or** `update_issue` call (never
+  both), followed by **exactly one** `pin_daily_report` call. No comments,
+  no labels, no PRs, no other side effects.
 - Body must be between 20 and 65 000 characters (safe-outputs constraint).
