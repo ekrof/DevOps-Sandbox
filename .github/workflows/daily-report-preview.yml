@@ -1,0 +1,144 @@
+name: Daily Report Preview (emulation, no LLM)
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 7 * * 1-5"
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+  actions: read
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Gather report data (same step as production workflow)
+        run: |
+      set -euo pipefail
+      out=/tmp/gh-aw/agent
+      mkdir -p "$out"
+
+      now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+      # Window start: 07:00 UTC of the previous weekday (Mon -> Fri).
+      if [ "$(date -u +%u)" = "1" ]; then back="3 days ago"; else back="1 day ago"; fi
+      since="$(date -u -d "$back" +%Y-%m-%dT07:00:00Z)"
+      week_ago="$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ)"
+      stale_cut="$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ)"
+
+      report_number="$(gh issue list --repo "$REPO" --label preview-after \
+        --state open --limit 1 --json number --jq '.[0].number // empty')"
+      if [ -n "$report_number" ]; then
+        gh issue view "$report_number" --repo "$REPO" --json body --jq .body \
+          > "$out/previous-report.md"
+      else
+        : > "$out/previous-report.md"
+      fi
+
+      gh issue list --repo "$REPO" --state open --limit 300 \
+        --json number,title,url,author,labels,assignees,createdAt,updatedAt \
+        > "$out/issues-open.json"
+      gh pr list --repo "$REPO" --state open --limit 200 \
+        --json number,title,url,author,isDraft,createdAt,updatedAt,reviewDecision,reviewRequests,statusCheckRollup,closingIssuesReferences \
+        > "$out/prs-open.json"
+      gh pr list --repo "$REPO" --state merged --limit 200 \
+        --search "merged:>=$week_ago" \
+        --json number,title,url,author,createdAt,mergedAt \
+        > "$out/prs-merged-7d.json"
+      gh run list --repo "$REPO" --branch main --limit 100 \
+        --created ">=$since" \
+        --json workflowName,url,conclusion,createdAt,event,displayTitle \
+        > "$out/runs-main.json"
+
+      jq -n \
+        --arg now "$now" --arg since "$since" --arg stale "$stale_cut" \
+        --arg report_number "$report_number" \
+        --slurpfile issues "$out/issues-open.json" \
+        --slurpfile prs "$out/prs-open.json" \
+        --slurpfile merged "$out/prs-merged-7d.json" \
+        --slurpfile runs "$out/runs-main.json" '
+        def age_days: ((($now|fromdate) - (. | fromdate)) / 86400 | floor);
+        def lbls: [.labels[].name];
+        def ci:
+          (.statusCheckRollup // []) as $c
+          | if ($c|length) == 0 then "none"
+            elif any($c[]; (.conclusion // "") as $k | $k=="FAILURE" or $k=="ERROR" or $k=="TIMED_OUT" or $k=="CANCELLED" or (.state // "")=="FAILURE" or (.state // "")=="ERROR") then "failing"
+            elif any($c[]; ((.status // "COMPLETED") != "COMPLETED") or (.state // "")=="PENDING") then "pending"
+            else "passing" end;
+        ($issues[0] | map(select((lbls | any(. == "daily-report" or . == "preview-after" or . == "preview-before")) | not))) as $is
+        | ($prs[0]) as $ps
+        | ($merged[0]) as $ms
+        | ($is | map(select(.createdAt >= $since))) as $new_issues
+        | ($ms | map(select(.mergedAt >= $since))) as $merged_win
+        | ($merged_win | map(.number)) as $merged_nums
+        | {
+            generated_at: $now,
+            window: {since: $since, until: $now},
+            report_issue_number: (if $report_number == "" then null else ($report_number|tonumber) end),
+            blocker_labels: ["bug","high","security"],
+            new_issues: ($new_issues | map({number,title,url,author:.author.login,labels:lbls})),
+            in_progress: ($is | map(select(.updatedAt >= $since)) | map({number,title,url,assignees:[.assignees[].login],updated_at:.updatedAt,labels:lbls})),
+            prs_opened: ($ps | map(select(.createdAt >= $since)) | map({number,title,url,author:.author.login,draft:.isDraft})),
+            prs_opened_total: (($ps | map(select(.createdAt >= $since)) | length) + ($merged_win | map(select(.createdAt >= $since)) | length)),
+            prs_merged: ($merged_win | map({number,title,url,author:.author.login,merged_at:.mergedAt})),
+            open_prs: ($ps | sort_by(.createdAt) | map({
+                number,title,url,author:.author.login,draft:.isDraft,
+                age_days:(.createdAt|age_days),
+                review:(.reviewDecision // "NONE"),
+                reviewers:[.reviewRequests[] | (.login // .name)],
+                ci:ci,
+                closes:[.closingIssuesReferences[].number],
+                stale:(.updatedAt < $stale)
+              })),
+            blockers: ($is + [] | map(select(lbls | any(. == "bug" or . == "high" or . == "security")))
+                | sort_by(.createdAt) | map({number,title,url,age_days:(.createdAt|age_days),labels:lbls,assignees:[.assignees[].login]})),
+            unassigned: ($is | map(select((.assignees|length)==0)) | sort_by(.createdAt)
+                | map({number,title,url,age_days:(.createdAt|age_days),labels:lbls})),
+            stale_issues: ($is | map(select(.updatedAt < $stale)) | sort_by(.updatedAt)
+                | map({number,title,url,idle_days:(.updatedAt|age_days),labels:lbls})),
+            workspace_requests: ($is | map(select(lbls | index("workspace-request"))) | map(
+                .number as $n | {
+                number,title,url,age_days:(.createdAt|age_days),
+                linked_prs:[$ps[] | select(any(.closingIssuesReferences[]; .number == $n)) | .number]
+              })),
+            failed_runs_main: ($runs[0] | map(select(.conclusion=="failure" or .conclusion=="timed_out"))
+                | map({workflow:.workflowName,url,title:.displayTitle,created_at:.createdAt,event})),
+            metrics: {
+              new_issues: ($new_issues|length),
+              in_progress: ($is | map(select(.updatedAt >= $since)) | length),
+              prs_opened: ($ps | map(select(.createdAt >= $since)) | length),
+              prs_total_incl_drafts: (($ps | map(select(.createdAt >= $since)) | length) + ($merged_win | map(select(.createdAt >= $since)) | length)),
+              prs_merged: ($merged_win|length),
+              open_blockers: ($is | map(select(lbls | any(. == "bug" or . == "high" or . == "security"))) | length),
+              open_prs: ($ps|length),
+              median_open_pr_age_days: (if ($ps|length)==0 then null else ($ps | map(.createdAt|age_days) | sort | .[(length/2|floor)]) end),
+              merged_last_7d: ($ms|length)
+            }
+          }' > "$out/report-data.json"
+
+      echo "Wrote $out/report-data.json"
+      jq .metrics "$out/report-data.json"
+      - name: Render and publish AFTER (new) and BEFORE (old) issues
+        run: |
+          set -euo pipefail
+          out=/tmp/gh-aw/agent
+          publish() { # title label body-file
+            n="$(gh issue list --repo "$REPO" --label "$2" --state open --limit 1 --json number --jq '.[0].number // empty')"
+            if [ -n "$n" ]; then
+              gh issue edit "$n" --repo "$REPO" --title "$1" --body-file "$3"
+            else
+              gh issue create --repo "$REPO" --title "$1" --body-file "$3" --label "$2"
+            fi
+          }
+          gh label create preview-after --color 0e8a16 --force >/dev/null
+          gh label create preview-before --color b60205 --force >/dev/null
+          python3 scripts/render_report.py "$out/report-data.json" "$out/previous-report.md" > after.md
+          python3 scripts/render_report.py "$out/report-data.json" "$out/previous-report.md" --legacy > before.md
+          publish "🌅 Daily MLOps Activity Report" preview-after after.md
+          publish "[BEFORE] Daily MLOps Activity Report" preview-before before.md
