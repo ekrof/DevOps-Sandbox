@@ -123,7 +123,7 @@ jobs:
               }' > "$out/report-data.json"
 
           echo "Wrote $out/report-data.json"
-      jq .metrics "$out/report-data.json"
+          jq .metrics "$out/report-data.json"
       - name: Render and publish AFTER (new) and BEFORE (old) issues
         run: |
           set -euo pipefail
