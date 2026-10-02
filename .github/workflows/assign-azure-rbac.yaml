@@ -1,5 +1,12 @@
 name: Assign Azure RBAC Roles
 
+# DISPATCH-FORM PREVIEW of the new assign-azure-rbac.yaml in AkerBP/dig-ai-foundation (PR #2334).
+# The `on:` block below is a verbatim copy, so "Run workflow" shows the form as it will look once
+# that PR merges. This copy makes no Azure calls: it validates the inputs the same way and writes
+# what a real run would do to the job summary.
+#
+# The earlier Azure-backed sandbox version of this workflow is in git history (cc41eb4).
+
 on:
   workflow_dispatch:
     inputs:
@@ -11,243 +18,128 @@ on:
           - dev
           - test
           - prod
+          - sbox
+          - stest
+          - sprod
       app_name:
-        description: "Display name, App ID (clientId), or Object ID of the target service principal"
-        required: true
+        description: "Object ID of the service principal"
         type: string
+        required: true
       role_foundry_user:
         description: "Foundry User"
-        type: boolean
-        default: false
-      role_cognitive_services_openai_user:
-        description: "Cognitive Services OpenAI User"
         type: boolean
         default: false
       role_search_index_data_contributor:
         description: "Search Index Data Contributor"
         type: boolean
         default: false
+      role_cognitive_services_openai_user:
+        description: "Cognitive Services OpenAI User"
+        type: boolean
+        default: false
+      role_cognitive_services_user:
+        description: "Cognitive Services User"
+        type: boolean
+        default: false
       role_search_service_contributor:
         description: "Search Service Contributor"
         type: boolean
         default: false
-      dry_run:
-        description: "Preview role changes without creating any assignments"
+      role_reader:
+        description: "Reader (AI Search service scope)"
+        type: boolean
+        default: false
+      role_monitoring_reader:
+        description: "Monitoring Reader (Application Insights scope)"
+        type: boolean
+        default: false
+      role_log_analytics_reader:
+        description: "Log Analytics Reader (Log Analytics workspace scope)"
+        type: boolean
+        default: false
+      role_search_index_data_reader:
+        description: "Search Index Data Reader (single index scope — requires index_name)"
+        type: boolean
+        default: false
+      index_name:
+        description: "AI Search index name (required only when role_search_index_data_reader is checked)"
+        type: string
         required: false
+      remove_roles:
+        description: "REMOVE the checked roles from the principal instead of assigning them"
         type: boolean
         default: false
 
 permissions:
-  id-token: write
   contents: read
-  issues: write
-
-concurrency:
-  group: azure-rbac-${{ inputs.environment }}-${{ inputs.app_name }}
-  cancel-in-progress: false
 
 jobs:
-  assign-roles:
+  preview:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Resolve environment settings
-        id: env
-        run: |
-          set -euo pipefail
-          ENVIRONMENT="${{ inputs.environment }}"
-          case "$ENVIRONMENT" in
-            dev)  SCOPE="${{ vars.AZURE_ROLE_SCOPE_DEV }}" ;;
-            test) SCOPE="${{ vars.AZURE_ROLE_SCOPE_TEST }}" ;;
-            prod) SCOPE="${{ vars.AZURE_ROLE_SCOPE_PROD }}" ;;
-            *) echo "::error::Unknown environment '$ENVIRONMENT'"; exit 1 ;;
-          esac
-
-          if [[ -z "$SCOPE" ]]; then
-            echo "::error::Repository variable AZURE_ROLE_SCOPE_${ENVIRONMENT^^} is not set."
-            exit 1
-          fi
-
-          echo "scope=${SCOPE}" >> "$GITHUB_OUTPUT"
-          echo "📋 Environment: ${{ inputs.environment }}"
-          echo "📋 Scope:       ${SCOPE}"
-
-      - name: Azure login (OIDC)
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Resolve principal object ID
-        id: resolve
-        run: |
-          set -euo pipefail
-          APP_NAME="${{ inputs.app_name }}"
-          GUID_RE='^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$'
-
-          if [[ "$APP_NAME" =~ $GUID_RE ]]; then
-            if OBJECT_ID=$(az ad sp show --id "$APP_NAME" --query id -o tsv 2>/dev/null) && [[ -n "$OBJECT_ID" ]]; then
-              :
-            else
-              OBJECT_ID=$(az ad sp list --filter "appId eq '$APP_NAME'" --query "[0].id" -o tsv)
-            fi
-          else
-            OBJECT_ID=$(az ad sp list --display-name "$APP_NAME" --query "[0].id" -o tsv)
-          fi
-
-          if [[ -z "$OBJECT_ID" || "$OBJECT_ID" == "null" ]]; then
-            echo "::error::Could not resolve a service principal for '$APP_NAME'."
-            exit 1
-          fi
-
-          echo "Resolved '$APP_NAME' -> $OBJECT_ID"
-          echo "object_id=$OBJECT_ID" >> "$GITHUB_OUTPUT"
-
-      - name: Reconcile role assignments
+      - name: Show what this run would do
         env:
-          OBJECT_ID: ${{ steps.resolve.outputs.object_id }}
-          SCOPE: ${{ steps.env.outputs.scope }}
-          DRY_RUN: ${{ inputs.dry_run }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          APP_NAME: ${{ inputs.app_name }}
+          INDEX_NAME: ${{ inputs.index_name }}
+          REMOVE_ROLES: ${{ inputs.remove_roles }}
           ROLE_FOUNDRY_USER: ${{ inputs.role_foundry_user }}
-          ROLE_COGNITIVE_SERVICES_OPENAI_USER: ${{ inputs.role_cognitive_services_openai_user }}
           ROLE_SEARCH_INDEX_DATA_CONTRIBUTOR: ${{ inputs.role_search_index_data_contributor }}
+          ROLE_COGNITIVE_SERVICES_OPENAI_USER: ${{ inputs.role_cognitive_services_openai_user }}
+          ROLE_COGNITIVE_SERVICES_USER: ${{ inputs.role_cognitive_services_user }}
           ROLE_SEARCH_SERVICE_CONTRIBUTOR: ${{ inputs.role_search_service_contributor }}
+          ROLE_READER: ${{ inputs.role_reader }}
+          ROLE_MONITORING_READER: ${{ inputs.role_monitoring_reader }}
+          ROLE_LOG_ANALYTICS_READER: ${{ inputs.role_log_analytics_reader }}
+          ROLE_SEARCH_INDEX_DATA_READER: ${{ inputs.role_search_index_data_reader }}
+        shell: bash
         run: |
           set -euo pipefail
+          GUID_RE='^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$'
+          if [[ ! "$APP_NAME" =~ $GUID_RE ]]; then
+            echo "::error::'$APP_NAME' is not a GUID. Pass the object ID of the service principal."
+            exit 1
+          fi
 
+          RG="resource group rg-msa-dig-aifoundation-${ENVIRONMENT}-sc-001"
+          declare -A SCOPE
           ROLES=()
-          [[ "$ROLE_FOUNDRY_USER" == "true" ]] && ROLES+=("Foundry User")
-          [[ "$ROLE_COGNITIVE_SERVICES_OPENAI_USER" == "true" ]] && ROLES+=("Cognitive Services OpenAI User")
-          [[ "$ROLE_SEARCH_INDEX_DATA_CONTRIBUTOR" == "true" ]] && ROLES+=("Search Index Data Contributor")
-          [[ "$ROLE_SEARCH_SERVICE_CONTRIBUTOR" == "true" ]] && ROLES+=("Search Service Contributor")
+          add() { ROLES+=("$1"); SCOPE["$1"]="$2"; }
+
+          [[ "$ROLE_FOUNDRY_USER" == "true" ]] && add "Foundry User" "$RG"
+          [[ "$ROLE_SEARCH_INDEX_DATA_CONTRIBUTOR" == "true" ]] && add "Search Index Data Contributor" "$RG"
+          [[ "$ROLE_COGNITIVE_SERVICES_OPENAI_USER" == "true" ]] && add "Cognitive Services OpenAI User" "$RG"
+          [[ "$ROLE_COGNITIVE_SERVICES_USER" == "true" ]] && add "Cognitive Services User" "$RG"
+          [[ "$ROLE_SEARCH_SERVICE_CONTRIBUTOR" == "true" ]] && add "Search Service Contributor" "$RG"
+          [[ "$ROLE_READER" == "true" ]] && add "Reader" "AI Search service"
+          [[ "$ROLE_MONITORING_READER" == "true" ]] && add "Monitoring Reader" "Application Insights"
+          [[ "$ROLE_LOG_ANALYTICS_READER" == "true" ]] && add "Log Analytics Reader" "Log Analytics workspace"
+          if [[ "$ROLE_SEARCH_INDEX_DATA_READER" == "true" ]]; then
+            if [[ -z "$INDEX_NAME" ]]; then
+              echo "::error::role_search_index_data_reader is checked but index_name is empty."
+              exit 1
+            fi
+            add "Search Index Data Reader" "index $INDEX_NAME"
+          fi
 
           if [[ ${#ROLES[@]} -eq 0 ]]; then
             echo "::error::No roles selected."
             exit 1
           fi
 
-          echo "| Role | Status |" >> "$GITHUB_STEP_SUMMARY"
-          echo "|------|--------|" >> "$GITHUB_STEP_SUMMARY"
-
-          for ROLE in "${ROLES[@]}"; do
-            if ! az role definition list --name "$ROLE" --query "[0].name" -o tsv | grep -q .; then
-              echo "::error::Unknown role definition '$ROLE'."
-              echo "| $ROLE | ❌ unknown role |" >> "$GITHUB_STEP_SUMMARY"
-              exit 1
-            fi
-
-            EXISTING=$(az role assignment list --assignee-object-id "$OBJECT_ID" --scope "$SCOPE" --role "$ROLE" --query "[0].id" -o tsv)
-
-            if [[ -n "$EXISTING" ]]; then
-              echo "'$ROLE' already assigned, skipping"
-              echo "| $ROLE | already assigned |" >> "$GITHUB_STEP_SUMMARY"
-              continue
-            fi
-
-            if [[ "$DRY_RUN" == "true" ]]; then
-              echo "[dry-run] would assign '$ROLE'"
-              echo "| $ROLE | would assign (dry-run) |" >> "$GITHUB_STEP_SUMMARY"
-              continue
-            fi
-
-            az role assignment create \
-              --assignee-object-id "$OBJECT_ID" \
-              --assignee-principal-type ServicePrincipal \
-              --role "$ROLE" \
-              --scope "$SCOPE"
-            echo "assigned '$ROLE'"
-            echo "| $ROLE | assigned |" >> "$GITHUB_STEP_SUMMARY"
-          done
-
-      - name: Sync current assignments to pinned issue
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SCOPE_DEV: ${{ vars.AZURE_ROLE_SCOPE_DEV }}
-          SCOPE_TEST: ${{ vars.AZURE_ROLE_SCOPE_TEST }}
-          SCOPE_PROD: ${{ vars.AZURE_ROLE_SCOPE_PROD }}
-        run: |
-          set -euo pipefail
-
-          CATALOG_ROLES=("Foundry User" "Cognitive Services OpenAI User" "Search Index Data Contributor" "Search Service Contributor")
-
-          FILTER=""
-          for ROLE in "${CATALOG_ROLES[@]}"; do
-            [[ -n "$FILTER" ]] && FILTER+=" || "
-            FILTER+="roleDefinitionName=='${ROLE}'"
-          done
-
-          declare -A ENV_EMOJI=([dev]="🛠️" [test]="🧪" [prod]="🚀")
-          declare -A ENV_SCOPE=([dev]="$SCOPE_DEV" [test]="$SCOPE_TEST" [prod]="$SCOPE_PROD")
-
-          TOTAL_PRINCIPALS=0
-          TOTAL_ASSIGNMENTS=0
-          SECTIONS=""
-
-          for ENVIRONMENT in dev test prod; do
-            SCOPE="${ENV_SCOPE[$ENVIRONMENT]}"
-            [[ -z "$SCOPE" ]] && continue
-
-            ASSIGNMENTS_JSON="$(az role assignment list --scope "$SCOPE" --query "[?${FILTER}]" -o json)"
-            COUNT="$(echo "$ASSIGNMENTS_JSON" | jq 'length')"
-            [[ "$COUNT" -eq 0 ]] && continue
-
-            GROUPED="$(echo "$ASSIGNMENTS_JSON" | jq -r '
-              group_by(.principalId)
-              | map({principalId: .[0].principalId, roles: ([.[].roleDefinitionName] | sort)})
-              | sort_by(.principalId)
-              | .[]
-              | [.principalId, (.roles | join(","))]
-              | @tsv
-            ')"
-
-            PRINCIPAL_COUNT="$(echo "$GROUPED" | grep -c . || true)"
-            TOTAL_PRINCIPALS=$((TOTAL_PRINCIPALS + PRINCIPAL_COUNT))
-            TOTAL_ASSIGNMENTS=$((TOTAL_ASSIGNMENTS + COUNT))
-
-            ENV_TABLE="| Principal | Object ID | Roles |"$'\n'"|-----------|-----------|-------|"$'\n'
-            while IFS=$'\t' read -r PRINCIPAL_ID ROLES_JOINED; do
-              [[ -z "$PRINCIPAL_ID" ]] && continue
-              DISPLAY_NAME="$(az ad sp show --id "$PRINCIPAL_ID" --query displayName -o tsv 2>/dev/null || echo "(unresolved)")"
-              ROLE_BADGES="$(echo "$ROLES_JOINED" | tr ',' '\n' | sed 's/^/`/;s/$/`/' | paste -sd' ' -)"
-              ROLE_COUNT="$(echo "$ROLES_JOINED" | tr ',' '\n' | grep -c .)"
-              SUFFIX=""
-              [[ "$ROLE_COUNT" -gt 1 ]] && SUFFIX=" _(${ROLE_COUNT} roles)_"
-              ENV_TABLE+="| **${DISPLAY_NAME}**${SUFFIX} | \`${PRINCIPAL_ID}\` | ${ROLE_BADGES} |"$'\n'
-            done <<< "$GROUPED"
-
-            SECTIONS+="<details open>"$'\n'
-            SECTIONS+="<summary>${ENV_EMOJI[$ENVIRONMENT]} <strong>${ENVIRONMENT}</strong> — ${PRINCIPAL_COUNT} principal(s), ${COUNT} assignment(s)</summary>"$'\n\n'
-            SECTIONS+="$ENV_TABLE"$'\n'
-            SECTIONS+="</details>"$'\n\n'
-          done
+          if [[ "$REMOVE_ROLES" == "true" ]]; then ACTION="would REMOVE"; else ACTION="would assign"; fi
 
           {
-            echo "# 🔐 Current Azure RBAC Delegated Role Assignments"
+            echo "### Preview (no Azure calls)"
             echo
-            echo "> Auto-generated by [assign-azure-rbac.yaml](${{ github.server_url }}/${{ github.repository }}/actions/workflows/assign-azure-rbac.yaml) — do not edit by hand, changes are overwritten on the next run."
+            echo "- Environment: \`$ENVIRONMENT\`"
+            echo "- Principal object ID: \`${APP_NAME,,}\`"
+            if [[ "$REMOVE_ROLES" == "true" ]]; then echo "- Mode: **REMOVE** — checked roles are revoked, not assigned"; fi
             echo
-            echo "**🌍 Environments:** $(echo "${!ENV_SCOPE[@]}" | tr ' ' '\n' | wc -l | tr -d ' ') · **🧑‍💻 Principals:** ${TOTAL_PRINCIPALS} · **🔑 Assignments:** ${TOTAL_ASSIGNMENTS}"
-            echo
-            echo "🕒 Last synced: $(date -u '+%Y-%m-%d %H:%M:%S UTC') · [Triggering run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
-            echo
-            echo "---"
-            echo
-            echo -n "$SECTIONS"
-          } > assignments-body.md
-
-          gh label create rbac-state --description "Tracks the auto-synced Azure RBAC assignments issue" --color "0E8A16" 2>/dev/null || true
-
-          ISSUE_NUM="$(gh issue list --label rbac-state --state open --json number --jq '.[0].number' || true)"
-
-          if [[ -z "$ISSUE_NUM" ]]; then
-            ISSUE_URL="$(gh issue create --title "🔐 Current Azure RBAC Delegated Role Assignments" --label rbac-state --body-file assignments-body.md)"
-            ISSUE_NUM="${ISSUE_URL##*/}"
-            gh issue pin "$ISSUE_NUM" || echo "::warning::Could not pin issue #$ISSUE_NUM — pin it manually."
-            echo "Created and pinned issue #$ISSUE_NUM"
-          else
-            gh issue edit "$ISSUE_NUM" --body-file assignments-body.md
-            echo "Updated issue #$ISSUE_NUM"
-          fi
+            echo "| Role | Scope | Action |"
+            echo "|------|-------|--------|"
+            for ROLE in "${ROLES[@]}"; do
+              echo "| $ROLE | ${SCOPE[$ROLE]} | $ACTION |"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+          cat "$GITHUB_STEP_SUMMARY"
