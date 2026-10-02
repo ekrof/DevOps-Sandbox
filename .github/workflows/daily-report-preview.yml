@@ -51,7 +51,7 @@ jobs:
             --search "merged:>=$week_ago" \
             --json number,title,url,author,createdAt,mergedAt \
             > "$out/prs-merged-7d.json"
-          gh run list --repo "$REPO" --branch main --limit 100 \
+          gh run list --repo "$REPO" --branch master --limit 100 \
             --created ">=$since" \
             --json workflowName,url,conclusion,createdAt,event,displayTitle \
             > "$out/runs-main.json"
