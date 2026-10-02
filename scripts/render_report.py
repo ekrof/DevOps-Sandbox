@@ -103,12 +103,10 @@ if sec_un:
 noreview = [p for p in data["open_prs"] if not p["reviewers"] and not p["draft"] and p["review"] != "APPROVED"]
 if noreview:
     tl.append(f"{len(noreview)} ready PRs have no reviewer assigned.")
-if data["failed_runs_main"]:
-    tl.append(f"{len(data['failed_runs_main'])} failed pipeline run(s) on `main`.")
 if m["merged_last_7d"] or m["prs_merged"]:
     tl.append(f"{m['prs_merged']} PRs merged in window, {m['merged_last_7d']} in the last 7 days.")
 
-out += ["☀️ Good morning, MLOps crew!", "", header, "", "## 🧭 TL;DR"]
+out += [header, "", "# ☀️ Good morning, MLOps crew!", "", "## 🧭 TL;DR"]
 out += [f"- {x}" for x in tl] or ["- Nothing urgent."]
 if needs:
     out += ["", "## 🙋 Needs a human today"] + needs
@@ -127,9 +125,6 @@ if data["prs_opened"]:
 if data["prs_merged"]:
     out += ["", f"**✅ Pull requests merged ({len(data['prs_merged'])})**"]
     out += [f"- {link(p)} {t(p['title'])} — {at(p['author'])}, merged {rel(p['merged_at'])}" for p in data["prs_merged"]]
-if data["failed_runs_main"]:
-    out += ["", f"**⚙️ Failed pipeline runs on main ({len(data['failed_runs_main'])})**"]
-    out += [f"- [{r['workflow']}]({r['url']}) — {rel(r['created_at'])}" for r in data["failed_runs_main"]]
 if data["workspace_requests"]:
     out += ["", f"**🏗️ Workspace requests ({len(data['workspace_requests'])})**"]
     for r in data["workspace_requests"]:

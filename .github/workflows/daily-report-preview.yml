@@ -51,10 +51,6 @@ jobs:
             --search "merged:>=$week_ago" \
             --json number,title,url,author,createdAt,mergedAt \
             > "$out/prs-merged-7d.json"
-          gh run list --repo "$REPO" --branch master --limit 100 \
-            --created ">=$since" \
-            --json workflowName,url,conclusion,createdAt,event,displayTitle \
-            > "$out/runs-main.json"
 
           jq -n \
             --arg now "$now" --arg since "$since" --arg stale "$stale_cut" \
@@ -62,7 +58,7 @@ jobs:
             --slurpfile issues "$out/issues-open.json" \
             --slurpfile prs "$out/prs-open.json" \
             --slurpfile merged "$out/prs-merged-7d.json" \
-            --slurpfile runs "$out/runs-main.json" '
+            '
             def age_days: ((($now|fromdate) - (. | fromdate)) / 86400 | floor);
             def lbls: [.labels[].name];
             def ci:
@@ -107,8 +103,6 @@ jobs:
                     number,title,url,age_days:(.createdAt|age_days),
                     linked_prs:[$ps[] | select(any(.closingIssuesReferences[]; .number == $n)) | .number]
                   })),
-                failed_runs_main: ($runs[0] | map(select(.conclusion=="failure" or .conclusion=="timed_out"))
-                    | map({workflow:.workflowName,url,title:.displayTitle,created_at:.createdAt,event})),
                 metrics: {
                   new_issues: ($new_issues|length),
                   in_progress: ($is | map(select(.updatedAt >= $since)) | length),
