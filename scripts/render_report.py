@@ -106,10 +106,10 @@ if noreview:
 if m["merged_last_7d"] or m["prs_merged"]:
     tl.append(f"{m['prs_merged']} PRs merged in window, {m['merged_last_7d']} in the last 7 days.")
 
-out += [header, "", "# ☀️ Good morning, MLOps crew!", "", "## 🧭 TL;DR"]
+out += ["## ☀️ Good morning, MLOps crew!", "", "### 🧭 TL;DR"]
 out += [f"- {x}" for x in tl] or ["- Nothing urgent."]
 if needs:
-    out += ["", "## 🙋 Needs a human today"] + needs
+    out += ["", "### 🙋 Needs a human today"] + needs
 
 out += ["", "## 📚 Activity digest"]
 if data["new_issues"]:
@@ -164,5 +164,5 @@ out += ["", "## 📊 Metrics",
         f"- 🆕 New issues: {m['new_issues']} · 🔧 In progress: {m['in_progress']}",
         f"- 🚀 PRs opened: {m['prs_opened']} (incl. same-window merges: {m['prs_total_incl_drafts']}) · ✅ PRs merged: {m['prs_merged']}",
         f"- 🔀 Open PRs: {m['open_prs']} · median open-PR age: {m['median_open_pr_age_days']}d · merged last 7 days: {m['merged_last_7d']}",
-        f"- 🚨 Open blockers: {m['open_blockers']}"]
+        f"- 🚨 Open blockers: {m['open_blockers']}", "", header]
 print("\n".join(out))
