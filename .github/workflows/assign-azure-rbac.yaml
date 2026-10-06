@@ -26,39 +26,39 @@ on:
         type: string
         required: true
       role_foundry_user:
-        description: "Foundry User (Foundry project scope)"
+        description: "Foundry User"
         type: boolean
         default: false
       role_search_index_data_contributor:
-        description: "Search Index Data Contributor (AI Search service scope)"
+        description: "Search Index Data Contributor"
         type: boolean
         default: false
       role_cognitive_services_openai_user:
-        description: "Cognitive Services OpenAI User (Foundry account scope)"
+        description: "Cognitive Services OpenAI User"
         type: boolean
         default: false
       role_cognitive_services_user:
-        description: "Cognitive Services User (Foundry account scope)"
+        description: "Cognitive Services User"
         type: boolean
         default: false
       role_search_service_contributor:
-        description: "Search Service Contributor (AI Search service scope)"
+        description: "Search Service Contributor"
         type: boolean
         default: false
       role_reader:
-        description: "Reader (AI Search service scope)"
+        description: "Reader (AI Search)"
         type: boolean
         default: false
       role_monitoring_reader:
-        description: "Monitoring Reader (Application Insights scope)"
+        description: "Monitoring Reader"
         type: boolean
         default: false
       role_log_analytics_reader:
-        description: "Log Analytics Reader (Log Analytics workspace scope)"
+        description: "Log Analytics Reader"
         type: boolean
         default: false
       role_search_index_data_reader:
-        description: "Search Index Data Reader (single index scope — requires index_name)"
+        description: "Search Index Data Reader (requires index_name)"
         type: boolean
         default: false
       index_name:
