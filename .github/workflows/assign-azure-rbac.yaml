@@ -26,23 +26,23 @@ on:
         type: string
         required: true
       role_foundry_user:
-        description: "Foundry User"
+        description: "Foundry User (Foundry project scope)"
         type: boolean
         default: false
       role_search_index_data_contributor:
-        description: "Search Index Data Contributor"
+        description: "Search Index Data Contributor (AI Search service scope)"
         type: boolean
         default: false
       role_cognitive_services_openai_user:
-        description: "Cognitive Services OpenAI User"
+        description: "Cognitive Services OpenAI User (Foundry account scope)"
         type: boolean
         default: false
       role_cognitive_services_user:
-        description: "Cognitive Services User"
+        description: "Cognitive Services User (Foundry account scope)"
         type: boolean
         default: false
       role_search_service_contributor:
-        description: "Search Service Contributor"
+        description: "Search Service Contributor (AI Search service scope)"
         type: boolean
         default: false
       role_reader:
@@ -100,17 +100,15 @@ jobs:
             echo "::error::'$APP_NAME' is not a GUID. Pass the object ID of the service principal."
             exit 1
           fi
-
-          RG="resource group rg-msa-dig-aifoundation-${ENVIRONMENT}-sc-001"
           declare -A SCOPE
           ROLES=()
           add() { ROLES+=("$1"); SCOPE["$1"]="$2"; }
 
-          [[ "$ROLE_FOUNDRY_USER" == "true" ]] && add "Foundry User" "$RG"
-          [[ "$ROLE_SEARCH_INDEX_DATA_CONTRIBUTOR" == "true" ]] && add "Search Index Data Contributor" "$RG"
-          [[ "$ROLE_COGNITIVE_SERVICES_OPENAI_USER" == "true" ]] && add "Cognitive Services OpenAI User" "$RG"
-          [[ "$ROLE_COGNITIVE_SERVICES_USER" == "true" ]] && add "Cognitive Services User" "$RG"
-          [[ "$ROLE_SEARCH_SERVICE_CONTRIBUTOR" == "true" ]] && add "Search Service Contributor" "$RG"
+          [[ "$ROLE_FOUNDRY_USER" == "true" ]] && add "Foundry User" "Foundry project"
+          [[ "$ROLE_SEARCH_INDEX_DATA_CONTRIBUTOR" == "true" ]] && add "Search Index Data Contributor" "AI Search service"
+          [[ "$ROLE_COGNITIVE_SERVICES_OPENAI_USER" == "true" ]] && add "Cognitive Services OpenAI User" "Foundry account"
+          [[ "$ROLE_COGNITIVE_SERVICES_USER" == "true" ]] && add "Cognitive Services User" "Foundry account"
+          [[ "$ROLE_SEARCH_SERVICE_CONTRIBUTOR" == "true" ]] && add "Search Service Contributor" "AI Search service"
           [[ "$ROLE_READER" == "true" ]] && add "Reader" "AI Search service"
           [[ "$ROLE_MONITORING_READER" == "true" ]] && add "Monitoring Reader" "Application Insights"
           [[ "$ROLE_LOG_ANALYTICS_READER" == "true" ]] && add "Log Analytics Reader" "Log Analytics workspace"
