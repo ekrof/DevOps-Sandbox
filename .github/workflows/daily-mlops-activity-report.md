@@ -100,9 +100,25 @@ steps:
           | jq -s . > "$out/project-in-progress.json" || echo '[]' > "$out/project-in-progress.json"
       fi
 
+      # Branch status and other repo activity since the window start.
+      default_branch="$(gh repo view "$REPO" --json defaultBranchRef --jq .defaultBranchRef.name)"
+      gh api graphql --paginate -F owner="${REPO%/*}" -F name="${REPO#*/}" -f query='
+        query($owner:String!, $name:String!, $endCursor:String){
+          repository(owner:$owner, name:$name){
+            refs(refPrefix:"refs/heads/", first:100, after:$endCursor){
+              pageInfo{hasNextPage endCursor}
+              nodes{ name target{ ... on Commit{ committedDate } } }}}}' \
+        --jq '.data.repository.refs.nodes[] | {name, date: .target.committedDate}' \
+        | jq -s --arg d "$default_branch" 'map(select(.name != $d))' > "$out/branches.json"
+      main_commits="$(gh api "repos/$REPO/commits?sha=$default_branch&since=$since&per_page=100" --jq 'length')"
+      failed_runs="$(gh run list --repo "$REPO" --status failure --created ">=$since" --limit 100 --json databaseId --jq 'length')"
+      jq -n --argjson c "${main_commits:-0}" --argjson f "${failed_runs:-0}" '{main_commits:$c, failed_runs:$f}' > "$out/activity.json"
+
       jq -n \
+        --slurpfile br "$out/branches.json" \
+        --slurpfile act "$out/activity.json" \
         --slurpfile proj "$out/project-in-progress.json" \
-        --arg now "$now" --arg since "$since" --arg stale "$stale_cut" \
+        --arg now "$now" --arg since "$since" --arg stale "$stale_cut" --arg week "$week_ago" \
         --arg report_number "$report_number" \
         --slurpfile issues "$out/issues-open.json" \
         --slurpfile prs "$out/prs-open.json" \
@@ -159,7 +175,13 @@ steps:
               open_bugs: ($is | map(select(lbls | index("bug"))) | length),
               open_prs: ($ps|length),
               median_open_pr_age_days: (if ($ps|length)==0 then null else ($ps | map(.createdAt|age_days) | sort | .[(length/2|floor)]) end),
-              merged_last_7d: ($ms|length)
+              merged_last_7d: ($ms|length),
+              branches_total: ($br[0]|length),
+              branches_active: ($br[0] | map(select(.date >= $week)) | length),
+              branches_stale: ($br[0] | map(select(.date < $week)) | length),
+              branches_updated_in_window: ($br[0] | map(select(.date >= $since)) | length),
+              main_commits: $act[0].main_commits,
+              failed_runs: $act[0].failed_runs
             }
           }' > "$out/report-data.json"
 
@@ -284,6 +306,8 @@ Definitions (already applied in the data):
 - **In progress**: open issue that either has Status "In Progress" in the
   team project (read-only) or was updated inside the window, and is not in
   `new_issues` (an issue never appears in both lists).
+- **Branch**: non-default branch. Active = last commit within 7 days; stale =
+  older. Counts only, taken from `metrics`.
 - **Bug**: open issue labelled `bug`, regardless of update time. Only a count
   in metrics.
 - Automated issues (security scan, AD group violations) are already filtered
@@ -342,6 +366,8 @@ _(omit if empty)_ when its list is empty.
 - 🚀 PRs opened: N (incl. same-window merges: N) · ✅ PRs merged: N
 - 🔀 Open PRs: N · median open-PR age: Nd · merged last 7 days: N
 - 🐞 Open bugs: N
+- 🌿 Branches: N (active N · stale N) · pushed in window: N
+- 📝 Commits on default branch in window: N · ❌ failed workflow runs in window: N
 
 ## 📰 Azure ML news (last 7 days) _(omit if `azure-ml-updates.json` is empty)_
 - [<title>](<url>) — <status; drop " — <status>" if null>

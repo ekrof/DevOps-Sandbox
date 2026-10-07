@@ -107,7 +107,9 @@ out += ["", "## 📊 Metrics",
         f"- 🆕 New issues: {m['new_issues']} · 🔧 In progress: {m['in_progress']}",
         f"- 🚀 PRs opened: {m['prs_opened']} (incl. same-window merges: {m['prs_total_incl_drafts']}) · ✅ PRs merged: {m['prs_merged']}",
         f"- 🔀 Open PRs: {m['open_prs']} · median open-PR age: {m['median_open_pr_age_days']}d · merged last 7 days: {m['merged_last_7d']}",
-        f"- 🐞 Open bugs: {m['open_bugs']}"]
+        f"- 🐞 Open bugs: {m['open_bugs']}",
+        f"- 🌿 Branches: {m['branches_total']} (active {m['branches_active']} · stale {m['branches_stale']}) · pushed in window: {m['branches_updated_in_window']}",
+        f"- 📝 Commits on default branch in window: {m['main_commits']} · ❌ failed workflow runs in window: {m['failed_runs']}"]
 
 news = json.load(open(sys.argv[3])) if len(sys.argv) > 3 else []
 if news:
