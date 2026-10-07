@@ -163,8 +163,8 @@ steps:
             }
           }' > "$out/report-data.json"
 
-      # Azure Machine Learning updates from the last 24h (Azure release communications API).
-      ml_since="$(date -u -d '1 day ago' +%Y-%m-%dT%H:%M:%SZ)"
+      # Azure Machine Learning updates from the last 7 days (they are infrequent; also covers weekends) (Azure release communications API).
+      ml_since="$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ)"
       curl -fsSL --max-time 30 -G "https://www.microsoft.com/releasecommunications/api/v2/azure" \
         --data-urlencode "\$filter=products/any(f:f eq 'Azure Machine Learning') and created ge $ml_since" \
         --data-urlencode '$orderby=created desc' --data-urlencode '$top=10' \
@@ -274,7 +274,7 @@ them as the single source of truth:
   `in_progress`, `prs_opened`, `prs_merged`, `open_prs`,
   `workspace_requests`, `metrics`.
 - `/tmp/gh-aw/agent/azure-ml-updates.json` — Azure Machine Learning updates
-  posted in the last 24h (may be `[]`).
+  posted in the last 7 days (may be `[]`).
 - `/tmp/gh-aw/agent/previous-report.md` — yesterday's report body (empty on
   first run), not needed.
 
@@ -337,14 +337,14 @@ _(omit if empty)_ when its list is empty.
 | # | Title | Author | Age | State | Review | CI | Reviewers |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 
-## 📰 Azure ML news _(omit if `azure-ml-updates.json` is empty)_
-- [<title>](<url>) — <status>
-
 ## 📊 Metrics
 - 🆕 New issues: N · 🔧 In progress: N
 - 🚀 PRs opened: N (incl. same-window merges: N) · ✅ PRs merged: N
 - 🔀 Open PRs: N · median open-PR age: Nd · merged last 7 days: N
 - 🐞 Open bugs: N
+
+## 📰 Azure ML news (last 7 days) _(omit if `azure-ml-updates.json` is empty)_
+- [<title>](<url>) — <status; drop " — <status>" if null>
 
 _Last updated: <DD.MM.YYYY HH:MM> · Report window: <DD.MM.YYYY HH:MM> → <DD.MM.YYYY HH:MM>_
 ```

@@ -103,14 +103,16 @@ if data["open_prs"]:
 else:
     out.append("_No open PRs._")
 
-news = json.load(open(sys.argv[3])) if len(sys.argv) > 3 else []
-if news:
-    out += ["", "## 📰 Azure ML news"]
-    out += [f"- [{t(n['title'])}]({n['url']}){' — ' + n['status'] if n.get('status') else ''}" for n in news]
-
 out += ["", "## 📊 Metrics",
         f"- 🆕 New issues: {m['new_issues']} · 🔧 In progress: {m['in_progress']}",
         f"- 🚀 PRs opened: {m['prs_opened']} (incl. same-window merges: {m['prs_total_incl_drafts']}) · ✅ PRs merged: {m['prs_merged']}",
         f"- 🔀 Open PRs: {m['open_prs']} · median open-PR age: {m['median_open_pr_age_days']}d · merged last 7 days: {m['merged_last_7d']}",
-        f"- 🐞 Open bugs: {m['open_bugs']}", "", header]
+        f"- 🐞 Open bugs: {m['open_bugs']}"]
+
+news = json.load(open(sys.argv[3])) if len(sys.argv) > 3 else []
+if news:
+    out += ["", "## 📰 Azure ML news (last 7 days)"]
+    out += [f"- [{t(n['title'])}]({n['url']}){' — ' + n['status'] if n.get('status') else ''}" for n in news]
+
+out += ["", header]
 print("\n".join(out))
