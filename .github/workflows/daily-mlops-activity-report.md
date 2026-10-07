@@ -111,8 +111,7 @@ steps:
         --jq '.data.repository.refs.nodes[] | {name, date: .target.committedDate}' \
         | jq -s --arg d "$default_branch" 'map(select(.name != $d))' > "$out/branches.json"
       main_commits="$(gh api "repos/$REPO/commits?sha=$default_branch&since=$since&per_page=100" --jq 'length')"
-      failed_runs="$(gh run list --repo "$REPO" --status failure --created ">=$since" --limit 100 --json databaseId --jq 'length')"
-      jq -n --argjson c "${main_commits:-0}" --argjson f "${failed_runs:-0}" '{main_commits:$c, failed_runs:$f}' > "$out/activity.json"
+      jq -n --argjson c "${main_commits:-0}" '{main_commits:$c}' > "$out/activity.json"
 
       jq -n \
         --slurpfile br "$out/branches.json" \
@@ -180,8 +179,7 @@ steps:
               branches_active: ($br[0] | map(select(.date >= $week)) | length),
               branches_stale: ($br[0] | map(select(.date < $week)) | length),
               branches_updated_in_window: ($br[0] | map(select(.date >= $since)) | length),
-              main_commits: $act[0].main_commits,
-              failed_runs: $act[0].failed_runs
+              main_commits: $act[0].main_commits
             }
           }' > "$out/report-data.json"
 
@@ -367,7 +365,7 @@ _(omit if empty)_ when its list is empty.
 - 🔀 Open PRs: N · median open-PR age: Nd · merged last 7 days: N
 - 🐞 Open bugs: N
 - 🌿 Branches: N (active N · stale N) · pushed in window: N
-- 📝 Commits on default branch in window: N · ❌ failed workflow runs in window: N
+- 📝 Commits on default branch in window: N
 
 ## 📰 Azure ML news (last 7 days) _(omit if `azure-ml-updates.json` is empty)_
 - [<title>](<url>) — <status; drop " — <status>" if null>
