@@ -106,7 +106,7 @@ else:
 news = json.load(open(sys.argv[3])) if len(sys.argv) > 3 else []
 if news:
     out += ["", "## 📰 Azure ML news"]
-    out += [f"- [{t(n['title'])}]({n['url']}) — {n['status']}" for n in news]
+    out += [f"- [{t(n['title'])}]({n['url']}){' — ' + n['status'] if n.get('status') else ''}" for n in news]
 
 out += ["", "## 📊 Metrics",
         f"- 🆕 New issues: {m['new_issues']} · 🔧 In progress: {m['in_progress']}",
