@@ -1,6 +1,6 @@
 ---
 description: Daily activity report for AkerBP/dig-mlops-workspaces, delivered as a pinned issue.
-intent: Give the DIG MLOps team one artefact per morning that surfaces new issues, in-progress activity, opened/merged PRs, and open blockers in the workspaces repository.
+intent: Give the DIG MLOps team one artefact per morning that surfaces what needs attention (bugs, review queue) plus new issues and opened/merged PRs in the workspaces repository.
 
 on:
   schedule:
@@ -21,6 +21,9 @@ permissions:
   issues: read
   pull-requests: read
   actions: read
+  # statusCheckRollup includes check runs and legacy commit statuses.
+  checks: read
+  statuses: read
   copilot-requests: write
 
 # No local checkout is needed — everything comes from the GitHub API.
@@ -37,12 +40,145 @@ tools:
     mode: gh-proxy
     toolsets: [default]
 
+# Deterministic data gathering: exact counts and tables are computed here,
+# the agent only reads the JSON and writes the narrative.
+steps:
+  - name: Gather report data
+    env:
+      GH_TOKEN: ${{ github.token }}
+      # Read-only token for the org project (Projects v2 is not readable with
+      # the default token). Optional: without it, only "updated in window" counts.
+      PROJECT_TOKEN: ${{ secrets.GH_AW_READ_PROJECT_TOKEN }}
+      REPO: ${{ github.repository }}
+    run: |
+      set -euo pipefail
+      out=/tmp/gh-aw/agent
+      mkdir -p "$out"
+
+      now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+      # Window start: 07:00 UTC of the previous weekday (Mon -> Fri).
+      if [ "$(date -u +%u)" = "1" ]; then back="3 days ago"; else back="1 day ago"; fi
+      since="$(date -u -d "$back" +%Y-%m-%dT07:00:00Z)"
+      week_ago="$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ)"
+      stale_cut="$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ)"
+
+      report_number="$(gh issue list --repo "$REPO" --label daily-report \
+        --state open --limit 1 --json number --jq '.[0].number // empty')"
+      if [ -n "$report_number" ]; then
+        gh issue view "$report_number" --repo "$REPO" --json body --jq .body \
+          > "$out/previous-report.md"
+      else
+        : > "$out/previous-report.md"
+      fi
+
+      gh issue list --repo "$REPO" --state open --limit 300 \
+        --json number,title,url,author,labels,assignees,createdAt,updatedAt \
+        > "$out/issues-open.json"
+      gh pr list --repo "$REPO" --state open --limit 200 \
+        --json number,title,url,author,isDraft,createdAt,updatedAt,reviewDecision,reviewRequests,statusCheckRollup,closingIssuesReferences \
+        > "$out/prs-open.json"
+      gh pr list --repo "$REPO" --state merged --limit 200 \
+        --search "merged:>=$week_ago" \
+        --json number,title,url,author,createdAt,mergedAt \
+        > "$out/prs-merged-7d.json"
+
+      # Issue numbers whose Status is "In Progress" in org project 18 (read-only).
+      echo '[]' > "$out/project-in-progress.json"
+      if [ -n "${PROJECT_TOKEN:-}" ]; then
+        GH_TOKEN="$PROJECT_TOKEN" gh api graphql --paginate -f query='
+          query($endCursor:String){
+            organization(login:"AkerBP"){ projectV2(number:18){
+              items(first:100, after:$endCursor){
+                pageInfo{hasNextPage endCursor}
+                nodes{
+                  status: fieldValueByName(name:"Status"){ ... on ProjectV2ItemFieldSingleSelectValue{ name } }
+                  content{ ... on Issue{ number repository{ nameWithOwner } } }
+                }}}}}' \
+          --jq '.data.organization.projectV2.items.nodes[]
+                | select(.status.name == "In Progress" and .content.number != null)
+                | .content.number' \
+          | jq -s . > "$out/project-in-progress.json" || echo '[]' > "$out/project-in-progress.json"
+      fi
+
+      jq -n \
+        --slurpfile proj "$out/project-in-progress.json" \
+        --arg now "$now" --arg since "$since" --arg stale "$stale_cut" \
+        --arg report_number "$report_number" \
+        --slurpfile issues "$out/issues-open.json" \
+        --slurpfile prs "$out/prs-open.json" \
+        --slurpfile merged "$out/prs-merged-7d.json" '
+        def age_days: ((($now|fromdate) - (. | fromdate)) / 86400 | floor);
+        def lbls: [.labels[].name];
+        def active($ip; $new_nums): select((.updatedAt >= $since or (.number as $n | $ip | index($n))) and (.number as $n | $new_nums | index($n) | not));
+        def ci:
+          (.statusCheckRollup // []) as $c
+          | if ($c|length) == 0 then "none"
+            elif any($c[]; (.conclusion // "") as $k | $k=="FAILURE" or $k=="ERROR" or $k=="TIMED_OUT" or $k=="CANCELLED" or (.state // "")=="FAILURE" or (.state // "")=="ERROR") then "failing"
+            elif any($c[]; ((.status // "COMPLETED") != "COMPLETED") or (.state // "")=="PENDING") then "pending"
+            else "passing" end;
+        def automated: (.title | test("^\\[Security\\] GitHub Actions workflow vulnerabilities|Workspace AD Group . Policy Violations"));
+        def owners: (if (.assignees|length) > 0 then [.assignees[].login] else [.author.login] end);
+        ($issues[0] | map(select(((lbls | index("daily-report")) | not) and (automated | not)))) as $is
+        | ($prs[0]) as $ps
+        | ($merged[0]) as $ms
+        | ($is | map(select(.createdAt >= $since))) as $new_issues
+        | ($new_issues | map(.number)) as $new_nums
+        | ($proj[0]) as $ip
+        | ($ms | map(select(.mergedAt >= $since))) as $merged_win
+        | ($merged_win | map(.number)) as $merged_nums
+        | {
+            generated_at: $now,
+            window: {since: $since, until: $now},
+            report_issue_number: (if $report_number == "" then null else ($report_number|tonumber) end),
+            bug_labels: ["bug"],
+            new_issues: ($new_issues | map({number,title,url,owners:owners,labels:lbls})),
+            in_progress: ($is | map(active($ip; $new_nums)) | map({number,title,url,owners:owners,updated_at:.updatedAt,labels:lbls})),
+            prs_opened: ($ps | map(select(.createdAt >= $since)) | map({number,title,url,author:.author.login,draft:.isDraft})),
+            prs_opened_total: (($ps | map(select(.createdAt >= $since)) | length) + ($merged_win | map(select(.createdAt >= $since)) | length)),
+            prs_merged: ($merged_win | map({number,title,url,author:.author.login,merged_at:.mergedAt})),
+            open_prs: ($ps | sort_by(.createdAt) | map({
+                number,title,url,author:.author.login,draft:.isDraft,
+                age_days:(.createdAt|age_days),
+                review:(.reviewDecision // "NONE"),
+                reviewers:[.reviewRequests[] | (.login // .name)],
+                ci:ci,
+                closes:[.closingIssuesReferences[].number],
+                stale:(.updatedAt < $stale)
+              })),
+            workspace_requests: ($is | map(select(lbls | index("workspace-request"))) | map(
+                .number as $n | {
+                number,title,url,age_days:(.createdAt|age_days),
+                linked_prs:[$ps[] | select(any(.closingIssuesReferences[]; .number == $n)) | .number]
+              })),
+            metrics: {
+              new_issues: ($new_issues|length),
+              in_progress: ($is | map(active($ip; $new_nums)) | length),
+              prs_opened: ($ps | map(select(.createdAt >= $since)) | length),
+              prs_total_incl_drafts: (($ps | map(select(.createdAt >= $since)) | length) + ($merged_win | map(select(.createdAt >= $since)) | length)),
+              prs_merged: ($merged_win|length),
+              open_bugs: ($is | map(select(lbls | index("bug"))) | length),
+              open_prs: ($ps|length),
+              median_open_pr_age_days: (if ($ps|length)==0 then null else ($ps | map(.createdAt|age_days) | sort | .[(length/2|floor)]) end),
+              merged_last_7d: ($ms|length)
+            }
+          }' > "$out/report-data.json"
+
+      # Azure Machine Learning updates from the last 24h (Azure release communications API).
+      ml_since="$(date -u -d '1 day ago' +%Y-%m-%dT%H:%M:%SZ)"
+      curl -fsSL --max-time 30 -G "https://www.microsoft.com/releasecommunications/api/v2/azure" \
+        --data-urlencode "\$filter=products/any(f:f eq 'Azure Machine Learning') and created ge $ml_since" \
+        --data-urlencode '$orderby=created desc' --data-urlencode '$top=10' \
+        | jq '[.value[] | {id,title,status,created,url:("https://azure.microsoft.com/updates?id=" + .id)}]' \
+        > "$out/azure-ml-updates.json" || echo '[]' > "$out/azure-ml-updates.json"
+
+      echo "Wrote $out/report-data.json"
+      jq .metrics "$out/report-data.json"
+
 safe-outputs:
   report-failure-as-issue: true
   # Bootstrap path: only used the very first time this workflow runs, when
   # no `daily-report`-labelled issue exists yet.
   create-issue:
-    title-prefix: "🌅 [Daily MLOps Activity] "
     labels: [mlops, daily-report, automated]
     max: 1
   # Steady-state path: every subsequent run rewrites the same issue in
@@ -105,128 +241,140 @@ safe-outputs:
             | jq -r '.data.repository.issue.id')"
 
           echo "Pinning issue #$issue_number (node $issue_id)"
-          gh api graphql -f query='
+          if ! err="$(gh api graphql -f query='
             mutation($id:ID!) {
               pinIssue(input:{issueId:$id}) { clientMutationId }
-            }' -F id="$issue_id" >/dev/null || \
-            echo "Pin no-op (likely already pinned)."
+            }' -F id="$issue_id" 2>&1 >/dev/null)"; then
+            if echo "$err" | grep -qi "already pinned"; then
+              echo "Pin no-op (already pinned)."
+            else
+              echo "$err" >&2
+              exit 1
+            fi
+          fi
 ---
 
-# 🌅 Daily MLOps Activity Report
+## Daily MLOps Activity Report
 
 You are the reporter for the AkerBP DIG MLOps team. Produce one concise,
 friendly daily activity report for the repository this workflow runs in:
 **`${{ github.repository }}`**.
 
 This report lives in a **single persistent issue** that gets rewritten
-every weekday — not a new issue per day. Before writing anything, find out
-whether that issue already exists.
+every weekday — not a new issue per day.
 
-## Time window ⏰
+## Data 🔎
 
-- **Since**: the previous scheduled run of this workflow. On Mondays that means
-  since Friday 07:00 UTC; on other weekdays, the last 24 hours.
-- **"In progress"** = an issue or PR that is open **and** has been updated
-  inside the time window.
-- **"Blocker"** = any open issue or PR labelled `blocker`, `incident`,
-  `priority/high`, or `bug`, regardless of update time.
+A pre-step has already gathered and computed everything. **Do not recompute
+counts or re-query GitHub for the lists below** — read these files and use
+them as the single source of truth:
 
-## Data to gather (read-only, via the `github` gh-proxy toolset) 🔎
+- `/tmp/gh-aw/agent/report-data.json` — all lists and metrics:
+  `window`, `report_issue_number` (null on first-ever run), `new_issues`,
+  `in_progress`, `prs_opened`, `prs_merged`, `open_prs`,
+  `workspace_requests`, `metrics`.
+- `/tmp/gh-aw/agent/azure-ml-updates.json` — Azure Machine Learning updates
+  posted in the last 24h (may be `[]`).
+- `/tmp/gh-aw/agent/previous-report.md` — yesterday's report body (empty on
+  first run), not needed.
 
-Using `gh` commands against the current repository only:
+Definitions (already applied in the data):
 
-0. **Find the existing report issue** — search for an open issue labelled
-   `daily-report` (e.g. `gh issue list --label daily-report --state open`).
-   Remember its number if found; if none exists, this is the first-ever run.
-1. **New issues opened in the window** — number, title, author, labels.
-2. **In-progress tasks** — open issues updated inside the window: number, title,
-   assignees, last-updated-at, current labels.
-3. **Pull requests opened in the window** — number, title, author, draft flag.
-4. **Pull requests merged in the window** — number, title, author, merge time.
-5. **Open blockers** — every open issue or PR matching the blocker rule above,
-   with age.
+- **Window**: since 07:00 UTC of the previous weekday (Mondays → Friday).
+- **In progress**: open issue that either has Status "In Progress" in the
+  team project (read-only) or was updated inside the window, and is not in
+  `new_issues` (an issue never appears in both lists).
+- **Bug**: open issue labelled `bug`, regardless of update time. Only a count
+  in metrics.
+- Automated issues (security scan, AD group violations) are already filtered
+  out of the data. Do not surface them.
+- **Owner**: assignees; falls back to the issue creator if unassigned.
 
-Do not attempt to clone code. Do not attempt to read other repositories. Call
-`noop` only if every list above is empty, with a short explanation — even on
-a quiet day, still update the existing report issue if one exists (see below);
-only skip entirely if there is truly nothing to say AND no report issue
-exists yet.
+Call `noop` only if every list is empty **and** `report_issue_number` is null.
+Otherwise always write the report.
+
+
 
 ## Output — required tool calls, in order ✍️
 
-**Step 1 — create or update the report issue** (exactly one of the two):
+**Step 1 — create or update the report issue** (exactly one of the two).
+The title is always exactly `🌅 Daily MLOps Activity Report` (no date, no
+prefix):
 
-- **If step 0 found no existing `daily-report` issue** (first-ever run),
-  call `create_issue` once:
-  - **Title**: `Daily MLOps Activity Report` (static — never include a date;
-    the `title-prefix` in frontmatter prepends `🌅 [Daily MLOps Activity] `
-    automatically).
-  - **Body**: the template below.
-- **If step 0 found an existing `daily-report` issue**, call `update_issue`
-  once instead, targeting that `issue_number`, with `operation: "replace"`
-  and:
-  - **status**: `"open"` (always keep it open).
-  - **title**: the same static title as above (do not change it).
-  - **body**: the template below, fully replacing the previous content.
+- `report_issue_number` is null → `create_issue` once.
+- Otherwise → `update_issue` once with `issue_number` =
+  `report_issue_number`, `operation: "replace"`, `status: "open"`, the same
+  title, and the new body.
 
-Body template (identical for both create and update):
+Body template. **The issue title already says "Daily MLOps Activity Report",
+so do not add a top-level heading with that name.** Omit any section marked
+_(omit if empty)_ when its list is empty.
 
-```
+```markdown
 ## ☀️ Good morning, MLOps crew!
 
-_Last updated: <current UTC timestamp>_
-_Report window: <start UTC> → <end UTC>_
-
-## 🧭 TL;DR
-- <3–6 bullets highlighting what needs the team's attention today>
-
-## 🚨 Open blockers
-| # | Title | Age | Labels |
-| --- | --- | --- | --- |
+### 🧭 TL;DR
+- <2–6 actionable bullets, most urgent first: PRs without reviewers, aging PRs, bugs. No filler such as "quiet day".>
 
 ## 📚 Activity digest
 
-**🆕 New issues (N)**
-- #123 <title> — @author, labels: `bug`, `mlops`
+**🆕 New issues (N)** _(omit if empty)_
+- <link> <title> — @owner(s), labels: `bug`, `mlops`
 
-**🔧 In-progress (N)**
-- #124 <title> — @assignee, updated <relative time>
+**🔧 In-progress (N)** _(omit if empty)_
+- <link> <title> — @owner(s), updated <relative time>
 
-**🚀 Pull requests opened (N)**
-- #125 <title> — @author (draft/ready)
+**🚀 Pull requests opened (N)** _(omit if empty)_
+- <link> <title> — @author (draft/ready)
 
-**✅ Pull requests merged (N)**
-- #126 <title> — @author, merged <relative time>
+**✅ Pull requests merged (N)** _(omit if empty)_
+- <link> <title> — @author, merged <relative time>
+
+**🏗️ Workspace requests (N)** _(omit if empty)_
+- <link> <title> — age, linked PR(s) or "no PR yet"
+
+## 🔀 Open pull requests (N)
+| # | Title | Author | Age | State | Review | CI | Reviewers |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+
+## 📰 Azure ML news _(omit if `azure-ml-updates.json` is empty)_
+- [<title>](<url>) — <status>
 
 ## 📊 Metrics
-- 🆕 New issues total: N
-- 🔧 In-progress items total: N
-- 🚀 PRs opened total: N
-- ✅ PRs merged total: N
-- 🚨 Open blockers total: N
+- 🆕 New issues: N · 🔧 In progress: N
+- 🚀 PRs opened: N (incl. same-window merges: N) · ✅ PRs merged: N
+- 🔀 Open PRs: N · median open-PR age: Nd · merged last 7 days: N
+- 🐞 Open bugs: N
 
----
-_🤖 Auto-generated by the `daily-mlops-activity-report` agentic workflow._
-_Have a productive day! ☕_
+_Last updated: <DD.MM.YYYY HH:MM> · Report window: <DD.MM.YYYY HH:MM> → <DD.MM.YYYY HH:MM>_
 ```
 
-**Step 2 — `pin_daily_report`** (exactly once, immediately after step 1
-succeeds):
+Table/section rules:
 
-Call the `pin_daily_report` tool with any short `note` (e.g. `"pin the
-report"`). This is **mandatory**, not optional — it ensures the report
-issue stays pinned. Safe to call every run; it is a no-op if already pinned.
+- **Open pull requests**: list every item in `open_prs`, oldest first. State =
+  `draft`/`ready`. Review = `approved`, `changes requested`, `review required`
+  or `none` (map `APPROVED`, `CHANGES_REQUESTED`, `REVIEW_REQUIRED`; empty or `NONE` → `none`).
+  CI = ✅ passing, ❌ failing, ⏳ pending, `–` none. Reviewers = requested
+  reviewers as backticked GitHub handles, e.g. `@maxrodca` `@other`, or `none`. Mark PRs with no reviewers or review required and
+  age ≥ 3d with ⚠️ in the Review cell. If empty write `_No open PRs._`.
 
 ## Rules 📏
 
 - Keep the whole body under ~400 lines. Truncate titles at 80 chars.
-- Every issue and PR reference must be a full URL (`https://github.com/...`).
-- Use the emojis exactly as shown in the template so the layout stays
-  consistent across days.
-- Never put a date in the issue **title** — only in the `_Last updated:_`
-  line inside the body. The title must stay identical across every run so
-  step 0's search keeps finding the same issue.
-- Emit **exactly one** `create_issue` **or** `update_issue` call (never
-  both), followed by **exactly one** `pin_daily_report` call. No comments,
-  no labels, no PRs, no other side effects.
+- Every issue and PR reference is a markdown link with its full URL from the
+  data, e.g. `[#123](https://github.com/...)`.
+- Use the emojis exactly as shown so the layout stays consistent across days.
+- Plain `@user` handles, except the PR Reviewers column (backticked).
+- Never put a date in the issue **title**; only in the `_Last updated:_` line.
+- **Timestamps**: all dates/times in European format, 24-hour clock,
+  converted to Europe/Oslo local time — `DD.MM.YYYY HH:MM`, no timezone
+  abbreviation. Keep "Last updated" and "Report window" on one line, at the very bottom of the body.
+- **Relative times**: whole units only, no decimals. Under 1 hour → minutes
+  (`23m ago`); hours → nearest hour (`18h ago`); days → nearest day (`2d ago`).
+- Metric numbers come from `metrics` verbatim.
+- **Step 2 — `pin_daily_report`** (exactly once, immediately after step 1
+  succeeds) with any short `note`. Mandatory; no-op if already pinned.
+- Emit **exactly one** `create_issue` **or** `update_issue` call, followed by
+  **exactly one** `pin_daily_report` call. No comments, labels, PRs, or other
+  side effects.
 - Body must be between 20 and 65 000 characters (safe-outputs constraint).
