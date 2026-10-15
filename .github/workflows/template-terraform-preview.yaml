@@ -1,0 +1,45 @@
+# EMULATION of template-terraform.yaml in AkerBP/dig-ai-foundation (PR #2406). No Azure calls:
+# same job/environment layout, plan and apply only write to the job summary.
+on:
+  workflow_call:
+    inputs:
+      environment:
+        type: string
+        required: true
+      plan_environment:
+        type: string
+        required: false
+        default: ""
+      ref:
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    name: Terraform Plan (${{ inputs.environment }})
+    environment: ${{ inputs.plan_environment || inputs.environment }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Plan (emulated)
+        run: |
+          {
+            echo "### Plan: ${{ inputs.environment }}"
+            echo "Ran in environment \`${{ inputs.plan_environment || inputs.environment }}\` at \`${{ inputs.ref }}\`."
+            echo "Plan: 0 to add, 0 to change, 0 to destroy. (emulated)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  apply:
+    name: Terraform Apply (${{ inputs.environment }})
+    needs: plan
+    environment: ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    concurrency:
+      group: terraform-apply-${{ inputs.environment }}
+      cancel-in-progress: false
+    steps:
+      - name: Apply saved plan (emulated)
+        run: echo "### Applied saved plan to ${{ inputs.environment }} (emulated)" >> "$GITHUB_STEP_SUMMARY"
