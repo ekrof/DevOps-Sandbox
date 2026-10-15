@@ -69,7 +69,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Upload Terraform plan
         if: steps.summary.outputs.has_changes == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tfplan-${{ inputs.environment }}
           path: infrastructure/tf.plan
@@ -94,7 +94,7 @@ jobs:
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_wrapper: false
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: tfplan-${{ inputs.environment }}
           path: infrastructure
