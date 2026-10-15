@@ -1,0 +1,64 @@
+name: Deploy Infrastructure (preview)
+
+# EMULATION of cd-deploy-infra.yaml in AkerBP/dig-ai-foundation (PR #2406), no Azure calls.
+# Infrastructure is promoted from main only, independent of SDK releases:
+#   dev -> test, stest -> prod, sprod
+# Every stage deploys the same commit and starts only after the previous one succeeded.
+# test, stest, prod and sprod are handled the same way: they plan in an ungated <env>-plan
+# environment, then pause before apply for required reviewers, who read the plan summary first.
+# The apply uses the saved plan. A newer merge supersedes a run still waiting for approval.
+# sbox is not part of promotion.
+#
+# There is no way to deploy another branch, tag or a single environment. To retry, re-run the
+# workflow on main; to roll back, revert the PR.
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - "infrastructure/**"
+      - "config-*.yaml"
+  workflow_dispatch: # re-promote main HEAD; rejected on any other ref
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Only main may deploy
+        if: github.ref != 'refs/heads/master'
+        run: |
+          echo "::error::Infrastructure deploys only from main (got ${{ github.ref }}). Merge a PR instead."
+          exit 1
+
+  promote-dev:
+    needs: guard
+    uses: ./.github/workflows/template-terraform-preview.yaml
+    with:
+      environment: dev
+      ref: ${{ github.sha }}
+
+  promote-test:
+    needs: promote-dev
+    strategy:
+      matrix:
+        environment: [test, stest]
+    uses: ./.github/workflows/template-terraform-preview.yaml
+    with:
+      environment: ${{ matrix.environment }}
+      plan_environment: ${{ matrix.environment }}-plan
+      ref: ${{ github.sha }}
+
+  promote-prod:
+    needs: promote-test
+    strategy:
+      matrix:
+        environment: [prod, sprod]
+    uses: ./.github/workflows/template-terraform-preview.yaml
+    with:
+      environment: ${{ matrix.environment }}
+      plan_environment: ${{ matrix.environment }}-plan
+      ref: ${{ github.sha }}
