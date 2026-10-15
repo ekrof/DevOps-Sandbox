@@ -2,3 +2,4 @@ terraform:
   tags:
     owner: "platform"
     cost_center: "demo"
+    feature_x: "enabled"
