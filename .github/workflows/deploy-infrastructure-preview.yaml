@@ -1,6 +1,6 @@
 name: Deploy Infrastructure (preview)
 
-# EMULATION of cd-deploy-infra.yaml in AkerBP/dig-ai-foundation (PR #2406), no Azure calls.
+# Mirrors cd-deploy-infra.yaml in AkerBP/dig-ai-foundation (PR #2406) against a test tenant.
 # Infrastructure is promoted from main only, independent of SDK releases:
 #   dev -> test, stest -> prod, sprod
 # Every stage deploys the same commit and starts only after the previous one succeeded.
@@ -22,6 +22,7 @@ on:
   workflow_dispatch: # re-promote main HEAD; rejected on any other ref
 
 permissions:
+  id-token: write
   contents: read
 
 jobs:

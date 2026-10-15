@@ -1,5 +1,6 @@
-# EMULATION of template-terraform.yaml in AkerBP/dig-ai-foundation (PR #2406). No Azure calls:
-# same job/environment layout, plan and apply only write to the job summary.
+# Mirrors template-terraform.yaml in AkerBP/dig-ai-foundation (PR #2406) against a test tenant:
+# plan in plan_environment (ungated), apply the saved plan in environment (gated), and skip the
+# apply entirely when the plan has no resource changes.
 on:
   workflow_call:
     inputs:
@@ -17,29 +18,91 @@ on:
 
 permissions:
   contents: read
+  id-token: write
+
+env:
+  ARM_USE_OIDC: true
+  ARM_USE_AZUREAD: true
+  ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+  ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
 jobs:
   plan:
     name: Terraform Plan (${{ inputs.environment }})
     environment: ${{ inputs.plan_environment || inputs.environment }}
     runs-on: ubuntu-latest
+    outputs:
+      has_changes: ${{ steps.summary.outputs.has_changes }}
+    defaults:
+      run:
+        working-directory: infrastructure
     steps:
-      - name: Plan (emulated)
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+      - name: Terraform Init
         run: |
+          terraform init -input=false \
+            -backend-config=storage_account_name="${{ vars.TF_STATE_STORAGE_ACCOUNT_NAME }}" \
+            -backend-config=container_name=tfstate \
+            -backend-config=key="${{ inputs.environment }}.tfstate"
+      - name: Terraform Plan
+        run: terraform plan -input=false -var environment=${{ inputs.environment }} -out=tf.plan
+      - name: Terraform Plan Summary
+        id: summary
+        run: |
+          terraform show -json tf.plan > tf.plan.json
+          CHANGES=$(jq '[.resource_changes[]? | select(.change.actions != ["no-op"] and .change.actions != ["read"])] | length' tf.plan.json)
+          if [ "$CHANGES" -gt 0 ]; then HAS_CHANGES=true; else HAS_CHANGES=false; fi
+          echo "has_changes=$HAS_CHANGES" >> "$GITHUB_OUTPUT"
           {
-            echo "### Plan: ${{ inputs.environment }}"
-            echo "Ran in environment \`${{ inputs.plan_environment || inputs.environment }}\` at \`${{ inputs.ref }}\`."
-            echo "Plan: 0 to add, 0 to change, 0 to destroy. (emulated)"
+            echo "## Terraform Plan Summary (\`${{ inputs.environment }}\`)"
+            echo ""
+            if [ "$HAS_CHANGES" = false ]; then echo "**No resource changes: apply skipped.**"; echo ""; fi
+            echo '```'
+            terraform show -no-color tf.plan | tail -n 60
+            echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload Terraform plan
+        if: steps.summary.outputs.has_changes == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-${{ inputs.environment }}
+          path: infrastructure/tf.plan
+          retention-days: 7
 
   apply:
     name: Terraform Apply (${{ inputs.environment }})
     needs: plan
+    if: needs.plan.outputs.has_changes == 'true'
     environment: ${{ inputs.environment }}
     runs-on: ubuntu-latest
     concurrency:
       group: terraform-apply-${{ inputs.environment }}
       cancel-in-progress: false
+    defaults:
+      run:
+        working-directory: infrastructure
     steps:
-      - name: Apply saved plan (emulated)
-        run: echo "### Applied saved plan to ${{ inputs.environment }} (emulated)" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: tfplan-${{ inputs.environment }}
+          path: infrastructure
+      - name: Terraform Init
+        run: |
+          terraform init -input=false \
+            -backend-config=storage_account_name="${{ vars.TF_STATE_STORAGE_ACCOUNT_NAME }}" \
+            -backend-config=container_name=tfstate \
+            -backend-config=key="${{ inputs.environment }}.tfstate"
+      - name: Terraform Apply
+        run: terraform apply -input=false -auto-approve tf.plan
