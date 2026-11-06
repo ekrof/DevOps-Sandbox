@@ -8,7 +8,7 @@ body:
     attributes:
       value: |
         Access is granted through `sg-dig-aml-datasciencews-<env>-sc-<tier>` AD groups.
-        Private workspace access? Use [Workspace Access](https://github.com/ekrof/DevOps-Sandbox/issues/new?template=access.yml).
+        Private workspace access? Use [Workspace Access](https://github.com/ekrof/DevOps-Sandbox/issues/new?template=06-access.yml).
 
   - type: dropdown
     id: workspace

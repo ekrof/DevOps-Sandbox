@@ -11,7 +11,7 @@ body:
         real-time responses. Catalog endpoints are authenticated public endpoints for non-sensitive data.
 
         Online endpoints in your own workspace? Use the
-        [Online Endpoints](https://github.com/ekrof/DevOps-Sandbox/issues/new?template=other-request.yml) form.
+        [Online Endpoints](https://github.com/ekrof/DevOps-Sandbox/issues/new?template=08-other-request.yml) form.
 
   - type: dropdown
     id: workspace
