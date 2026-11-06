@@ -9,12 +9,19 @@ on:
   schedule:
     - cron: "30 5 * * 1-5"
   workflow_dispatch:
+    inputs:
+      issue_number:
+        description: "Triage this issue (issue events fail to start in this sandbox)"
+        required: false
+        default: ""
 
 permissions: {}
 
 jobs:
   triage:
-    if: github.event_name == 'issues' && contains(github.event.issue.labels.*.name, 'service-request')
+    if: >-
+      (github.event_name == 'issues' && contains(github.event.issue.labels.*.name, 'service-request')) ||
+      inputs.issue_number != ''
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -27,9 +34,10 @@ jobs:
       - uses: ./.github/actions/service-request
         with:
           mode: triage
+          issue-number: ${{ inputs.issue_number }}
 
   expiry:
-    if: github.event_name != 'issues'
+    if: github.event_name != 'issues' && inputs.issue_number == ''
     runs-on: ubuntu-latest
     permissions:
       contents: read

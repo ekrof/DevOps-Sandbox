@@ -14,6 +14,10 @@ inputs:
     description: "Token for writes in the current repository."
     required: false
     default: ${{ github.token }}
+  issue-number:
+    description: "Mock only: load this issue when the event carries none (workflow_dispatch)."
+    required: false
+    default: ""
   read-token:
     description: >
       Optional token that can read AkerBP/dig-mlops-workspaces, used to check that
@@ -36,11 +40,16 @@ runs:
         ACTION_PATH: ${{ github.action_path }}
         MODE: ${{ inputs.mode }}
         READ_TOKEN: ${{ inputs.read-token }}
+        ISSUE_NUMBER: ${{ inputs.issue-number }}
       with:
         github-token: ${{ inputs.github-token }}
         script: |
           const sr = require(`${process.env.ACTION_PATH}/service-request.js`);
           const mode = process.env.MODE;
+          if (process.env.ISSUE_NUMBER) {
+            const { data } = await github.rest.issues.get({ ...context.repo, issue_number: Number(process.env.ISSUE_NUMBER) });
+            context.payload.issue = data;
+          }
           if (!['triage', 'expire', 'parse'].includes(mode)) return core.setFailed(`Unknown mode: ${mode}`);
           const reader = process.env.READ_TOKEN
             ? getOctokit(process.env.READ_TOKEN)
