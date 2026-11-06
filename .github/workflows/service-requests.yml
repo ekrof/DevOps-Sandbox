@@ -1,0 +1,44 @@
+name: Service Requests (mock)
+
+# Mock of AkerBP/dig-mlops-workspaces#534 using a local copy of the
+# dig-mlops-workflows service-request action.
+
+on:
+  issues:
+    types: [opened, edited]
+  schedule:
+    - cron: "30 5 * * 1-5"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  triage:
+    if: github.event_name == 'issues' && contains(github.event.issue.labels.*.name, 'service-request')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/actions
+      - uses: ./.github/actions/service-request
+        with:
+          mode: triage
+
+  expiry:
+    if: github.event_name != 'issues'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/actions
+      - uses: ./.github/actions/service-request
+        with:
+          mode: expire

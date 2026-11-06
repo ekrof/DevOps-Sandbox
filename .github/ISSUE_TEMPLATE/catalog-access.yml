@@ -1,0 +1,67 @@
+name: "🔐 Catalog Access"
+description: "Analyst, scientist or admin access to the internal model catalog"
+title: "Catalog access: "
+labels: ["service-request", "request:catalog-access"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Access is granted through `sg-dig-aml-datasciencews-<env>-sc-<tier>` AD groups.
+        Private workspace access? Use [Workspace Access](https://github.com/ekrof/DevOps-Sandbox/issues/new?template=workspace-access.yml).
+
+  - type: dropdown
+    id: workspace
+    attributes:
+      label: "Workspace"
+      options: [dig-aml-datasciencews-sc]
+      default: 0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: environment
+    attributes:
+      label: "Environment"
+      options: [dev, prod]
+    validations:
+      required: true
+
+  - type: input
+    id: user
+    attributes:
+      label: "User"
+      description: Admin account sign-in name.
+      placeholder: "admin.john.doe@akerbp.com"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: access
+    attributes:
+      label: "Access"
+      options: [analyst, scientist, admin]
+    validations:
+      required: true
+
+  - type: dropdown
+    id: change
+    attributes:
+      label: "Change"
+      options: [Add, Remove, Change level]
+    validations:
+      required: true
+
+  - type: textarea
+    id: reason
+    attributes:
+      label: "Reason"
+    validations:
+      required: true
+
+  - type: input
+    id: expiry
+    attributes:
+      label: "Expiry"
+      description: End date if temporary (`YYYY-MM-DD`). MLOps is reminded to remove access after this date.
+      placeholder: "2026-12-31"

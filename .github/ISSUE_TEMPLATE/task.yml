@@ -1,0 +1,26 @@
+name: "✅ Task"
+description: "A concrete piece of work"
+title: "Task: "
+
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: "Description"
+    validations:
+      required: true
+
+  - type: textarea
+    id: todos
+    attributes:
+      label: "TODOs"
+      value: |
+        - [ ] 
+    validations:
+      required: true
+
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: "Dependencies"
+      description: "Related issues or external blockers."

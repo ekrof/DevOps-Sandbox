@@ -1,0 +1,47 @@
+name: "🚀 Online Endpoints (Private Workspace)"
+description: "Approval to enable online endpoints in an existing private workspace"
+title: "Online endpoints: "
+labels: ["service-request", "request:online-endpoint"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        MLOps enables online endpoints in the workspace configuration; your team deploys
+        and manages the endpoints. See the
+        [approval policy](https://github.com/AkerBP/dig-mlops-workspaces/blob/main/docs/adrs/2026-10-02-online-endpoint-approval-and-private-egress.md).
+
+        - New workspace? Choose it in the [Workspace Request](https://github.com/ekrof/DevOps-Sandbox/issues/new?template=workspace-request.yml) form.
+        - Endpoint for a catalog model? Use [Catalog Online Endpoint](https://github.com/ekrof/DevOps-Sandbox/issues/new?template=catalog-endpoint.yml).
+
+  - type: input
+    id: workspace
+    attributes:
+      label: "Workspace"
+      placeholder: "dig-aml-anomdet-sc"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: environment
+    attributes:
+      label: "Environment"
+      options: [dev, test, prod]
+    validations:
+      required: true
+
+  - type: textarea
+    id: purpose
+    attributes:
+      label: "Purpose"
+      description: Why you need real-time inference rather than batch.
+    validations:
+      required: true
+
+  - type: input
+    id: owner
+    attributes:
+      label: "Owner"
+      description: Who owns the service and its running costs.
+    validations:
+      required: true

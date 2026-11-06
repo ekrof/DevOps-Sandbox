@@ -1,0 +1,64 @@
+name: "📦 Add a Model or Version"
+description: "Add a pretrained model or a new version to the internal model catalog"
+title: "Add model: "
+labels: ["service-request", "request:add-model"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Applies only to the internal catalog (`mlw-datasciencews-dev`). Non-confidential data only.
+        See [platform service requests](https://github.com/AkerBP/dig-mlops-workspaces/blob/main/docs/roadmap/platform-service-requests.md#add-a-model-or-version).
+
+  - type: dropdown
+    id: workspace
+    attributes:
+      label: "Workspace"
+      options: [dig-aml-datasciencews-sc]
+      default: 0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: environment
+    attributes:
+      label: "Environment"
+      options: [dev]
+      default: 0
+    validations:
+      required: true
+
+  - type: input
+    id: model
+    attributes:
+      label: "Model"
+      description: Name and source link, e.g. Hugging Face.
+      placeholder: "https://huggingface.co/microsoft/Florence-2-large"
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: "Version"
+      description: Which version to add, if known.
+
+  - type: textarea
+    id: purpose
+    attributes:
+      label: "Purpose"
+      description: What you want to use the model for.
+    validations:
+      required: true
+
+  - type: input
+    id: license
+    attributes:
+      label: "License"
+      description: Link, if known.
+
+  - type: textarea
+    id: requirements
+    attributes:
+      label: "Requirements"
+      description: Known compute needs or tests needed to verify it works.

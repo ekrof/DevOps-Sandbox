@@ -1,0 +1,48 @@
+name: "Service Request"
+description: >
+  Handles MLOps service request issues filed through the issue forms in
+  dig-mlops-workspaces and dig-mlops-internal-models. Modes:
+  'triage' labels, validates and acknowledges the triggering issue;
+  'expire' opens removal issues for approved temporary access past its Expiry;
+  'parse' returns the triggering issue's form fields as JSON.
+
+inputs:
+  mode:
+    description: "triage | expire | parse"
+    required: true
+  github-token:
+    description: "Token for writes in the current repository."
+    required: false
+    default: ${{ github.token }}
+  read-token:
+    description: >
+      Optional token that can read AkerBP/dig-mlops-workspaces, used to check that
+      the Workspace field names an existing workspace. Without it the check is skipped
+      outside dig-mlops-workspaces.
+    required: false
+    default: ""
+
+outputs:
+  result:
+    description: "JSON result: form fields (parse) or created issue numbers (expire)."
+    value: ${{ steps.run.outputs.result }}
+
+runs:
+  using: composite
+  steps:
+    - id: run
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        MODE: ${{ inputs.mode }}
+        READ_TOKEN: ${{ inputs.read-token }}
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const sr = require(`${process.env.ACTION_PATH}/service-request.js`);
+          const mode = process.env.MODE;
+          if (!['triage', 'expire', 'parse'].includes(mode)) return core.setFailed(`Unknown mode: ${mode}`);
+          const reader = process.env.READ_TOKEN
+            ? getOctokit(process.env.READ_TOKEN)
+            : context.repo.repo === sr.WORKSPACES_REPO.repo ? github : null;
+          return sr[mode]({ github, context, reader });

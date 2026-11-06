@@ -1,0 +1,45 @@
+name: "🐛 Bug"
+description: "Something in the platform is broken"
+title: "Bug: "
+
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: "Description"
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: "Steps to reproduce"
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: "Expected behavior"
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: "Actual behavior"
+      description: "Include error messages and logs."
+    validations:
+      required: true
+
+  - type: dropdown
+    id: environment
+    attributes:
+      label: "Environment"
+      options: [dev, test, prod]
+
+  - type: input
+    id: workspace
+    attributes:
+      label: "Workspace or commit"
+      placeholder: "dig-aml-anomdet-sc / abc1234"

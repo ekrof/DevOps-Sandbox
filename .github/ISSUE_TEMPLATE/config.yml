@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: "📖 Platform service requests"
+    url: https://github.com/AkerBP/dig-mlops-workspaces/blob/feature/platform-service-requests/docs/roadmap/platform-service-requests.md
+    about: "Mock of AkerBP/dig-mlops-workspaces#534 — all forms from workspaces and internal-models in one chooser."

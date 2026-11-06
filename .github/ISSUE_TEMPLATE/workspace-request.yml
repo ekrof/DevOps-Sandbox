@@ -1,0 +1,291 @@
+name: "🤖 Workspace Request"
+description: "🔧 Request a new Azure ML workspace — automated provisioning"
+title: "Workspace: "
+labels: ["service-request", "request:workspace", "workspace-request", "infrastructure"]
+
+body:
+  # ── Project Information ──────────────────────────────────────────────
+  - type: markdown
+    attributes:
+      value: |
+        ## 📋 Project Information
+        Provide core details about the ML workspace you need.
+
+  - type: input
+    id: app_name
+    attributes:
+      label: "📛 Project / Application Name"
+      description: >-
+        Short name used in Azure resource naming. Must be **lowercase
+        alphanumeric only** (no hyphens, underscores, or spaces), **1–15
+        characters**.
+      placeholder: "e.g. anomalydet"
+    validations:
+      required: true
+
+  - type: input
+    id: owner_email
+    attributes:
+      label: "👤 Project Owner"
+      description: Admin email of the workspace owner to manage AD groups.
+      placeholder: "admin.firstname.lastname@akerbp.com"
+    validations:
+      required: true
+
+  - type: input
+    id: repository
+    attributes:
+      label: "📂 Repository"
+      description: GitHub repository that will use this workspace.
+      placeholder: "AkerBP/my-ml-project"
+    validations:
+      required: true
+
+  # ── Use Case ─────────────────────────────────────────────────────────
+  - type: textarea
+    id: use_case
+    attributes:
+      label: "💡 Use Case"
+      description: |
+        Describe what this workspace will be used for:
+        - What ML problem are you solving?
+        - What type of models / workloads?
+        - What data sources will you use?
+        - Expected compute requirements?
+      placeholder: "We plan to train anomaly-detection models on sensor data from …"
+    validations:
+      required: true
+
+  # ── Configuration ────────────────────────────────────────────────────
+  - type: markdown
+    attributes:
+      value: |
+        ## ⚙️ Configuration
+        Select the infrastructure settings for your workspace.
+
+  - type: input
+    id: scope
+    attributes:
+      label: "🏢 Business Scope"
+      description: >-
+        Business unit prefix used in Azure resource naming.
+        Must be **lowercase alphanumeric or hyphen**, **≤ 3 characters**.
+      placeholder: "e.g. dig, exprs, ops"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: environment
+    attributes:
+      label: "🌍 Environment"
+      description: Target deployment environment.
+      options:
+        - dev
+        - test
+        - prod
+    validations:
+      required: true
+
+  - type: dropdown
+    id: location
+    attributes:
+      label: "📍 Azure Region"
+      options:
+        - swedencentral
+        - westeurope
+    validations:
+      required: true
+
+  - type: dropdown
+    id: network_access
+    attributes:
+      label: "🔒 Public Network Access"
+      description: >-
+        **Public** – internet accessible (with authentication).
+        **Private** – VPN / private endpoint only (recommended for highly
+        confidential data).
+      options:
+        - "Public"
+        - "Private"
+    validations:
+      required: true
+
+  # ── Features ─────────────────────────────────────────────────────────
+  - type: markdown
+    attributes:
+      value: |
+        ## 🚀 Features
+
+  - type: dropdown
+    id: enable_compute
+    attributes:
+      label: "🖥️ Enable AML Compute Cluster"
+      description: Provision managed CPU/GPU compute clusters.
+      options:
+        - "No"
+        - "Yes"
+      default: 0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: enable_monitoring
+    attributes:
+      label: "📊 Enable Container Insights Monitoring"
+      description: Provision Data Explorer integration for monitoring.
+      options:
+        - "No"
+        - "Yes"
+      default: 0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: enable_online_endpoints
+    attributes:
+      label: "🚀 Deploy Managed Online (Real-time) Endpoints"
+      description: >-
+        Only applies to **Private** workspaces. Records online endpoint approval
+        in workspace configuration and publishes it as a workspace tag for
+        downstream deployment scripts. Choose **Yes** if this workspace needs
+        real-time endpoints; leave **No** for batch-only or training-only
+        workspaces. Online deployments can incur ongoing compute costs.
+      options:
+        - "No"
+        - "Yes"
+      default: 0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: budget_alert
+    attributes:
+      label: "💰 Monthly Budget Alert"
+      description: >-
+        Emails the Project Owner at 80%/100% of spend. Standard suits most
+        workspaces; editable later via `budget.amount`.
+      options:
+        - "Standard — NOK 2,000 / month"
+        - "Medium — NOK 5,000 / month"
+        - "High — NOK 10,000 / month"
+      default: 0
+    validations:
+      required: false
+
+  # ── AKS Workload Identity ────────────────────────────────────────────
+  - type: markdown
+    attributes:
+      value: |
+        ## 🔑 AKS Workload Identity
+        Required only if a Kubernetes workload (e.g. inference service) needs to authenticate to this workspace.
+
+  - type: dropdown
+    id: aks_required
+    attributes:
+      label: "🔑 AKS Workload Identity Required?"
+      description: Enable federated identity for an AKS workload.
+      options:
+        - "No"
+        - "Yes"
+      default: 0
+    validations:
+      required: true
+
+  - type: input
+    id: aks_namespace
+    attributes:
+      label: "🗂️ AKS Namespace"
+      description: Kubernetes namespace of the workload. Required if AKS workload identity is enabled.
+      placeholder: "e.g. mlops"
+    validations:
+      required: false
+
+  - type: input
+    id: aks_service_account
+    attributes:
+      label: "🤖 AKS Service Account"
+      description: Kubernetes service account name. Required if AKS workload identity is enabled.
+      placeholder: "e.g. keyvault-identity-mlops"
+    validations:
+      required: false
+
+  - type: input
+    id: aks_cluster_id
+    attributes:
+      label: "🆔 AKS Cluster ID"
+      description: Azure resource UUID of the AKS cluster. Required if AKS workload identity is enabled.
+      placeholder: "12345678-1234-1234-1234-123456789012"
+    validations:
+      required: false
+
+  - type: dropdown
+    id: aks_issuer_region
+    attributes:
+      label: "🌍 AKS Issuer Region"
+      description: Region of the AKS cluster (used to build the OIDC issuer URL). Required if AKS workload identity is enabled.
+      options:
+        - swedencentral
+        - westeurope
+    validations:
+      required: false
+
+  # ── Tags & Metadata ─────────────────────────────────────────────────
+  - type: markdown
+    attributes:
+      value: |
+        ## 🏷️ Tags & Metadata
+
+  - type: dropdown
+    id: business_unit
+    attributes:
+      label: "🏗️ Business Unit"
+      description: Department cost code for tagging.
+      options:
+        - "ONSDBT — Digital Execution"
+        - "ONSDRW — Drilling & Wells"
+        - "ONSRES — Exploration & Reservoir Development"
+        - "ONSFIN — Finance, Strategy & Partner Operated Assets"
+        - "ONSOPS — Operations"
+        - "ONSPEO — People & Safety"
+        - "ONSPRO — Projects"
+        - "ONSSCM — Supply Chain Management and Logistics"
+    validations:
+      required: true
+
+  - type: input
+    id: mapped_application_service
+    attributes:
+      label: "🔗 Mapped Application Service"
+      description: ServiceNow ID or application service name.
+      placeholder: "MLOPS-NonProd"
+    validations:
+      required: true
+
+  # ── Additional Context ───────────────────────────────────────────────
+  - type: textarea
+    id: additional_context
+    attributes:
+      label: "📝 Additional Context"
+      description: >-
+        Optional: special requirements, timeline, dependencies, or
+        compliance needs.
+    validations:
+      required: false
+
+  # ── Acknowledgment ───────────────────────────────────────────────────
+  - type: checkboxes
+    id: acknowledgment
+    attributes:
+      label: "✅ Acknowledgment"
+      options:
+        - label: >-
+            I accept responsibility for using this infrastructure for AkerBP
+            workstreams in compliance with company policies
+          required: true
+        - label: >-
+            I have reviewed the
+            [workspace documentation](blob/main/workspaces/CONFIG-REFERENCE.md)
+          required: true
+        - label: >-
+            For production, I will coordinate with the platform team
+          required: true

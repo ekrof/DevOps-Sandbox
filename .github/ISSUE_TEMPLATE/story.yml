@@ -1,0 +1,33 @@
+name: "📖 Story"
+description: "A user story for the MLOps team backlog"
+title: "Story: "
+
+body:
+  - type: textarea
+    id: story
+    attributes:
+      label: "Story"
+      description: "As a [persona], I want [goal], so that [benefit]."
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: "Acceptance criteria"
+      value: |
+        - [ ] 
+    validations:
+      required: true
+
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: "Dependencies"
+      description: "Related issues or external blockers."
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: "Additional information"
+      description: "Screenshots, links, mockups."

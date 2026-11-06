@@ -1,0 +1,41 @@
+name: "🏔️ Epic"
+description: "A collection of related stories with one objective"
+title: "Epic: "
+
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: "Objective"
+    validations:
+      required: true
+
+  - type: textarea
+    id: value
+    attributes:
+      label: "Business value"
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: "Acceptance criteria"
+      value: |
+        - [ ] 
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: "Scope"
+      value: |
+        **In scope**
+        - 
+
+        **Out of scope**
+        - 
+
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: "Dependencies and stakeholders"

@@ -1,0 +1,69 @@
+name: "🌐 Catalog Online Endpoint"
+description: "Real-time endpoint for a catalog model, deployed and managed by MLOps"
+title: "Catalog endpoint: "
+labels: ["service-request", "request:online-endpoint"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Every catalog model has a batch endpoint. Request an online endpoint only when you need
+        real-time responses. Catalog endpoints are authenticated public endpoints for non-sensitive data.
+
+        Online endpoints in your own workspace? Use the
+        [Online Endpoints](https://github.com/ekrof/DevOps-Sandbox/issues/new?template=online-endpoint.yml) form.
+
+  - type: dropdown
+    id: workspace
+    attributes:
+      label: "Workspace"
+      options: [dig-aml-datasciencews-sc]
+      default: 0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: environment
+    attributes:
+      label: "Environment"
+      options: [dev, prod]
+    validations:
+      required: true
+
+  - type: input
+    id: model
+    attributes:
+      label: "Model"
+      description: Name and version to serve.
+    validations:
+      required: true
+
+  - type: textarea
+    id: purpose
+    attributes:
+      label: "Purpose"
+      description: Why batch is not sufficient.
+    validations:
+      required: true
+
+  - type: textarea
+    id: callers
+    attributes:
+      label: "Callers"
+      description: Applications or services that will call it, including their identity if known.
+    validations:
+      required: true
+
+  - type: textarea
+    id: usage
+    attributes:
+      label: "Expected usage"
+      description: Call frequency and response-time needs, if known.
+
+  - type: input
+    id: owner
+    attributes:
+      label: "Owner"
+      description: Who owns the service and its running costs.
+    validations:
+      required: true
