@@ -1,4 +1,4 @@
-name: "🔐 Catalog Access"
+name: "🔐 Catalog: Access"
 description: "Analyst, scientist or admin access to the internal model catalog"
 title: "Catalog access: "
 labels: ["service-request", "request:catalog-access"]
@@ -8,7 +8,7 @@ body:
     attributes:
       value: |
         Access is granted through `sg-dig-aml-datasciencews-<env>-sc-<tier>` AD groups.
-        Private workspace access? Use [Workspace Access](https://github.com/ekrof/DevOps-Sandbox/issues/new?template=workspace-access.yml).
+        Private workspace access? Use [Workspace Access](https://github.com/ekrof/DevOps-Sandbox/issues/new?template=access.yml).
 
   - type: dropdown
     id: workspace

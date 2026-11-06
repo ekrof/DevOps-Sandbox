@@ -1,5 +1,5 @@
 name: "💬 Other Request or Question"
-description: "Anything for the MLOps team that no other form covers"
+description: "Online endpoints in your workspace, questions, or anything no other form covers"
 title: "Request: "
 labels: ["service-request", "request:other"]
 

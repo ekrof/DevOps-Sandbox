@@ -1,0 +1,93 @@
+name: "🔑 Access Request"
+description: "Workspace access, Azure access for GitHub Actions, or Azure access for a workload"
+title: "Access: "
+labels: ["service-request", "request:access"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Fill in the fields for your access type; leave the others empty.
+        Catalog access? Use **Catalog Access**.
+
+  - type: dropdown
+    id: access_type
+    attributes:
+      label: "Access type"
+      options:
+        - Workspace access or group owners
+        - GitHub Actions (repository → workspace)
+        - Workload (job, endpoint or app identity)
+    validations:
+      required: true
+
+  - type: input
+    id: workspace
+    attributes:
+      label: "Workspace"
+      placeholder: "dig-aml-anomdet-sc"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: environment
+    attributes:
+      label: "Environment"
+      options: [dev, test, prod]
+    validations:
+      required: true
+
+  - type: dropdown
+    id: change
+    attributes:
+      label: "Change"
+      options: [Add, Change, Remove]
+    validations:
+      required: true
+
+  - type: input
+    id: user
+    attributes:
+      label: "User"
+      description: "Workspace access: admin account."
+      placeholder: "admin.john.doe@akerbp.com"
+
+  - type: input
+    id: repository
+    attributes:
+      label: "Repository"
+      description: "GitHub Actions: repository that needs access."
+      placeholder: "AkerBP/my-ml-project"
+
+  - type: checkboxes
+    id: roles
+    attributes:
+      label: "Roles"
+      description: "GitHub Actions: what the repository needs."
+      options:
+        - label: "AzureML Data Scientist"
+        - label: "AzureML Compute Operator"
+        - label: "AcrPush"
+        - label: "Key Vault Secrets Officer"
+        - label: "Reader"
+        - label: "Storage Blob Data Contributor"
+
+  - type: textarea
+    id: details
+    attributes:
+      label: "Details"
+      description: "Workload: which job/endpoint/app, identity if known, target resource and permissions. Workspace access: group or ownership change."
+
+  - type: textarea
+    id: reason
+    attributes:
+      label: "Reason"
+    validations:
+      required: true
+
+  - type: input
+    id: expiry
+    attributes:
+      label: "Expiry"
+      description: "End date if temporary (`YYYY-MM-DD`)."
+      placeholder: "2026-12-31"

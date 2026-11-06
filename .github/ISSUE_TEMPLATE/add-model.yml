@@ -1,4 +1,4 @@
-name: "📦 Add a Model or Version"
+name: "📦 Catalog: Add a Model or Version"
 description: "Add a pretrained model or a new version to the internal model catalog"
 title: "Add model: "
 labels: ["service-request", "request:add-model"]

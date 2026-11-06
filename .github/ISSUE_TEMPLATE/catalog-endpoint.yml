@@ -1,4 +1,4 @@
-name: "🌐 Catalog Online Endpoint"
+name: "🌐 Catalog: Online Endpoint"
 description: "Real-time endpoint for a catalog model, deployed and managed by MLOps"
 title: "Catalog endpoint: "
 labels: ["service-request", "request:online-endpoint"]
@@ -11,7 +11,7 @@ body:
         real-time responses. Catalog endpoints are authenticated public endpoints for non-sensitive data.
 
         Online endpoints in your own workspace? Use the
-        [Online Endpoints](https://github.com/ekrof/DevOps-Sandbox/issues/new?template=online-endpoint.yml) form.
+        [Online Endpoints](https://github.com/ekrof/DevOps-Sandbox/issues/new?template=other-request.yml) form.
 
   - type: dropdown
     id: workspace
