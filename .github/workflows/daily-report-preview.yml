@@ -19,7 +19,7 @@ jobs:
       PROJECT_TOKEN: ${{ secrets.GH_AW_READ_PROJECT_TOKEN }}
       REPO: ${{ github.repository }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Gather report data (same step as production workflow)
         run: |
           set -euo pipefail
