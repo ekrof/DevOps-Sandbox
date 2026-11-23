@@ -8,7 +8,7 @@ body:
     attributes:
       value: |
         Fill in the fields for your access type; leave the others empty.
-        Catalog access? Use **Catalog Access**.
+        Catalog access? Use [Catalog: Access](https://github.com/ekrof/DevOps-Sandbox/issues/new?template=10-catalog-access.yml).
 
   - type: dropdown
     id: access_type
@@ -84,10 +84,3 @@ body:
       label: "Reason"
     validations:
       required: true
-
-  - type: input
-    id: expiry
-    attributes:
-      label: "Expiry"
-      description: "End date if temporary (`YYYY-MM-DD`)."
-      placeholder: "2026-12-31"

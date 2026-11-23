@@ -26,7 +26,6 @@ const LABELS = {
 
 const ADMIN_EMAIL = /^admin\.[a-z0-9.-]+@akerbp\.com$/i;
 const REPO = /^(?:https:\/\/github\.com\/)?([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/;
-const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 // User input shown inside inline code in bot comments.
 const code = (v) => '`' + String(v).replace(/`/g, "'").replace(/\n/g, ' ') + '`';
@@ -70,17 +69,13 @@ function validateFields(fields) {
   if (repo !== undefined && repo && !parseRepo(repo)) {
     errors.push(`**Repository** must be \`owner/name\` or a GitHub link (got ${code(repo)}).`);
   }
-  const expiry = fields['Expiry'];
-  if (expiry !== undefined && expiry && !DATE.test(expiry)) {
-    errors.push(`**Expiry** must be a date in \`YYYY-MM-DD\` format (got ${code(expiry)}).`);
-  }
   // Access Request form: one form, fields required per access type.
   const type = fields['Access type'] || '';
   const missing = (f) => !fields[f];
   if (type.startsWith('Workspace access') && missing('User')) errors.push('**User** is required for workspace access.');
   if (type.startsWith('GitHub Actions')) {
     if (missing('Repository')) errors.push('**Repository** is required for GitHub Actions access.');
-    if (!checkedOptions(fields['Roles']).length) errors.push('**Roles**: tick at least one for GitHub Actions access.');
+    if (fields['Change'] !== 'Remove' && !checkedOptions(fields['Roles']).length) errors.push('**Roles**: tick at least one for GitHub Actions access.');
   }
   if (type.startsWith('Workload') && missing('Details')) errors.push('**Details** is required for workload access.');
   return errors;
@@ -155,7 +150,7 @@ async function triage({ github, context, reader }) {
     : [MARKER, '### ✅ Request received', '',
        'The MLOps team reviews new requests and replies here.',
        '- `needs-info` — we are waiting for you.',
-              '', `See [service requests](${DOCS}).`].join('\n');
+       '', `See [service requests](${DOCS}).`].join('\n');
 
   const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number });
   const mine = comments.find((c) => c.body && c.body.startsWith(MARKER));

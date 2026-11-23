@@ -58,10 +58,3 @@ body:
       label: "Reason"
     validations:
       required: true
-
-  - type: input
-    id: expiry
-    attributes:
-      label: "Expiry"
-      description: End date if temporary (`YYYY-MM-DD`). MLOps is reminded to remove access after this date.
-      placeholder: "2026-12-31"
