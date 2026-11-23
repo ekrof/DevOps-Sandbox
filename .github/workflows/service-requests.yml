@@ -35,18 +35,3 @@ jobs:
         with:
           mode: triage
           issue-number: ${{ inputs.issue_number }}
-
-  expiry:
-    if: github.event_name != 'issues' && inputs.issue_number == ''
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      issues: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          sparse-checkout: .github/actions
-      - uses: ./.github/actions/service-request
-        with:
-          mode: expire

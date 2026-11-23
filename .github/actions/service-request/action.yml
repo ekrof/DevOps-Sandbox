@@ -50,7 +50,7 @@ runs:
             const { data } = await github.rest.issues.get({ ...context.repo, issue_number: Number(process.env.ISSUE_NUMBER) });
             context.payload.issue = data;
           }
-          if (!['triage', 'expire', 'parse'].includes(mode)) return core.setFailed(`Unknown mode: ${mode}`);
+          if (!['triage'].includes(mode)) return core.setFailed(`Unknown mode: ${mode}`);
           const reader = process.env.READ_TOKEN
             ? getOctokit(process.env.READ_TOKEN)
             : context.repo.repo === sr.WORKSPACES_REPO.repo ? github : null;

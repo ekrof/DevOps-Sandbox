@@ -10,22 +10,18 @@ const WORKSPACES_REPO = { owner: 'AkerBP', repo: 'dig-mlops-workspaces' };
 const LABELS = {
   'service-request': ['0e8a16', 'Request to the MLOps team'],
   'request:workspace': ['c5def5', 'New private workspace'],
-  'request:workspace-access': ['c5def5', 'Private workspace access or group owners'],
-  'request:github-actions-access': ['c5def5', 'Azure access for GitHub Actions'],
-  'request:workload-access': ['c5def5', 'Azure access for jobs, endpoints or apps'],
+  'request:access': ['c5def5', 'Workspace, GitHub Actions or workload access'],
   'request:compute-quota-network': ['c5def5', 'Compute, quota or network change'],
-  'request:online-endpoint': ['c5def5', 'Online endpoint approval or deployment'],
+  'request:other': ['c5def5', 'Other request or question'],
   'request:add-model': ['c5def5', 'Add a model or version to the catalog'],
   'request:catalog-access': ['c5def5', 'Internal model catalog access'],
-  'request:other': ['c5def5', 'Other request or question'],
+  'request:catalog-endpoint': ['c5def5', 'Online endpoint for a catalog model'],
   'env:dev': ['fbca04', 'Development environment'],
   'env:test': ['fbca04', 'Test environment'],
   'env:prod': ['d93f0b', 'Production environment'],
   'scope:catalog': ['bfdadc', 'Internal model catalog (mlw-datasciencews)'],
   'scope:private': ['bfdadc', 'Private use case workspace'],
   'needs-info': ['e99695', 'Waiting for the requester'],
-  approved: ['0e8a16', 'Approved by the MLOps team'],
-  'access-expired': ['5319e7', 'Temporary access expiry handled'],
 };
 
 const ADMIN_EMAIL = /^admin\.[a-z0-9.-]+@akerbp\.com$/i;
@@ -78,6 +74,15 @@ function validateFields(fields) {
   if (expiry !== undefined && expiry && !DATE.test(expiry)) {
     errors.push(`**Expiry** must be a date in \`YYYY-MM-DD\` format (got ${code(expiry)}).`);
   }
+  // Access Request form: one form, fields required per access type.
+  const type = fields['Access type'] || '';
+  const missing = (f) => !fields[f];
+  if (type.startsWith('Workspace access') && missing('User')) errors.push('**User** is required for workspace access.');
+  if (type.startsWith('GitHub Actions')) {
+    if (missing('Repository')) errors.push('**Repository** is required for GitHub Actions access.');
+    if (!checkedOptions(fields['Roles']).length) errors.push('**Roles**: tick at least one for GitHub Actions access.');
+  }
+  if (type.startsWith('Workload') && missing('Details')) errors.push('**Details** is required for workload access.');
   return errors;
 }
 
@@ -102,11 +107,6 @@ async function validateRemote(reader, fields) {
     errors.push(`**Workspace** ${code(ws)} does not exist in [dig-mlops-workspaces/workspaces](https://github.com/AkerBP/dig-mlops-workspaces/tree/main/workspaces).`);
   }
   return errors;
-}
-
-function isExpired(fields, today) {
-  const expiry = fields['Expiry'];
-  return Boolean(expiry && DATE.test(expiry) && expiry < today);
 }
 
 // Checkbox fields render as "- [X] option" lines.
@@ -155,52 +155,12 @@ async function triage({ github, context, reader }) {
     : [MARKER, '### ✅ Request received', '',
        'The MLOps team reviews new requests and replies here.',
        '- `needs-info` — we are waiting for you.',
-       '- `approved` — accepted; automated requests get a pull request linked to this issue.',
-       '', `See [service requests](${DOCS}).`].join('\n');
+              '', `See [service requests](${DOCS}).`].join('\n');
 
   const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number });
   const mine = comments.find((c) => c.body && c.body.startsWith(MARKER));
   if (mine) await github.rest.issues.updateComment({ owner, repo, comment_id: mine.id, body });
   else await github.rest.issues.createComment({ owner, repo, issue_number, body });
-}
-
-// Open a removal issue for each closed, approved request whose Expiry has passed.
-async function expire({ github, context, today = new Date().toISOString().slice(0, 10) }) {
-  const { owner, repo } = context.repo;
-  const issues = await github.paginate(github.rest.issues.listForRepo, {
-    owner, repo, state: 'closed', labels: 'service-request,approved', per_page: 100,
-  });
-  const opened = [];
-  for (const issue of issues) {
-    if (issue.pull_request || issue.state_reason === 'not_planned') continue;
-    if (issue.labels.some((l) => l.name === 'access-expired')) continue;
-    const fields = parseForm(issue.body);
-    if (!isExpired(fields, today)) continue;
-
-    const labels = issue.labels.map((l) => l.name).filter((n) => /^(request|env|scope):/.test(n));
-    const { data: created } = await github.rest.issues.create({
-      owner, repo,
-      title: `Remove expired access: ${issue.title}`,
-      labels: ['service-request', ...labels],
-      body: [
-        `Temporary access from #${issue.number} expired on **${fields['Expiry']}**.`,
-        '', `- User: ${fields['User'] || 'n/a'}`, `- Workspace: ${fields['Workspace'] || 'n/a'}`,
-        `- Environment: ${fields['Environment'] || 'n/a'}`, '',
-        `Remove the access, then close this issue. @${issue.user.login} — reply if it is still needed.`,
-      ].join('\n'),
-    });
-    await github.rest.issues.addLabels({ owner, repo, issue_number: issue.number, labels: ['access-expired'] });
-    await github.rest.issues.createComment({ owner, repo, issue_number: issue.number, body: `Access expired — follow-up: #${created.number}` });
-    opened.push(created.number);
-  }
-  return opened;
-}
-
-// Form fields of the triggering issue, with repository and checkbox values normalised.
-function parse({ context }) {
-  const fields = parseForm(context.payload.issue.body);
-  const repo = parseRepo(fields['Repository']);
-  return { ...fields, Repository: repo ? `${repo.owner}/${repo.repo}` : '', Roles: checkedOptions(fields['Roles']) };
 }
 
 module.exports = {
@@ -211,9 +171,5 @@ module.exports = {
   dynamicLabels,
   validateFields,
   validateRemote,
-  isExpired,
-  checkedOptions,
   triage,
-  expire,
-  parse,
 };
