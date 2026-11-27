@@ -1,5 +1,5 @@
 name: "🖥️ Compute / Quota / Network Change"
-description: "Changes your team cannot make within the workspace's permissions or limits"
+description: "New or changed compute clusters, quota increases, network access"
 title: "Change: "
 labels: ["service-request", "request:compute-quota-network"]
 
@@ -8,6 +8,7 @@ body:
     id: workspace
     attributes:
       label: "Workspace"
+      description: Folder name in `workspaces/`, not the Azure ML workspace name.
       placeholder: "dig-aml-anomdet-sc"
     validations:
       required: true
@@ -46,7 +47,21 @@ body:
     id: compute
     attributes:
       label: "Compute / quota"
-      description: VM size or family, current usage/limit and requested limit.
+      description: |
+        New or changed cluster: name, VM size, min/max nodes.
+        Quota: VM family, current usage/limit and requested limit.
+      placeholder: |
+        - name: orchestration-cluster
+          vm_size: Standard_D2s_v3
+          min_nodes: 0
+          max_nodes: 2
+
+  - type: input
+    id: identity
+    attributes:
+      label: "Identity"
+      description: Managed identity the cluster should use, if not the workspace default cluster identity.
+      placeholder: "umi-cluster-<app>-dev"
 
   - type: textarea
     id: network
